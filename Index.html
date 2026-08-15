@@ -1,0 +1,1262 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cash Position Report — Plataran</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<style>
+:root{
+  --ink:#10243A; --ink2:#48607A; --ink3:#8497A8;
+  --paper:#FBFBF7; --field:#E7EFE9; --field2:#F2F7F3;
+  --rule:#CBD5CE; --rule2:#E4E9E5;
+  --stamp:#B0332B; --amber:#946612; --ok:#2F6B4F;
+  --pad:clamp(14px,3vw,30px);
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{background:var(--paper);color:var(--ink);font-family:Archivo,system-ui,sans-serif;
+  font-size:15px;line-height:1.45;-webkit-font-smoothing:antialiased}
+.num{font-family:"IBM Plex Mono",ui-monospace,monospace;font-variant-numeric:tabular-nums}
+.wrap{max-width:1180px;margin:0 auto;padding:0 var(--pad) 72px}
+
+header{border-bottom:2px solid var(--ink);background:var(--paper);position:sticky;top:0;z-index:20}
+.kop{max-width:1180px;margin:0 auto;padding:16px var(--pad) 0;display:flex;flex-wrap:wrap;
+  gap:16px;align-items:flex-end;justify-content:space-between}
+h1{margin:0;font-size:clamp(19px,2.5vw,26px);font-weight:700;letter-spacing:-.02em}
+.sub{margin:2px 0 0;color:var(--ink2);font-size:13.5px}
+.sub b{font-weight:600;color:var(--ink)}
+nav{display:flex;gap:2px;margin:14px auto 0;max-width:1180px;padding:0 var(--pad)}
+nav button{appearance:none;border:1px solid var(--rule);border-bottom:none;background:transparent;
+  font:inherit;font-size:13.5px;font-weight:500;color:var(--ink2);padding:8px 16px;
+  border-radius:3px 3px 0 0;cursor:pointer;margin-bottom:-2px}
+nav button[aria-selected=true]{background:var(--field);color:var(--ink);font-weight:600;
+  border-color:var(--ink);border-bottom:2px solid var(--field)}
+nav button:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+
+.angka{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));
+  border:1px solid var(--rule);border-top:none;margin-top:26px;background:var(--field2)}
+.angka>div{padding:13px 17px;border-right:1px solid var(--rule2)}
+.angka>div:last-child{border-right:none}
+.lbl{font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink2);font-weight:600}
+.angka .val{font-size:clamp(21px,2.8vw,28px);font-weight:600;margin-top:2px;letter-spacing:-.02em}
+.angka .val small{font-size:13px;font-weight:500;color:var(--ink2);margin-left:4px}
+
+.blok{margin-top:32px}
+.blok .judul{display:flex;flex-wrap:wrap;gap:10px;align-items:baseline;justify-content:space-between;
+  border-bottom:1px solid var(--ink);padding-bottom:6px}
+.blok h2{margin:0;font-size:12px;letter-spacing:.1em;text-transform:uppercase;font-weight:700}
+.blok .biaya{font-size:13px;color:var(--ink2)}
+.blok .biaya b{font-weight:600;color:var(--ink)}
+.blok p.ket{margin:7px 0 0;color:var(--ink2);font-size:13px}
+
+.baris{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:start;
+  padding:12px 0;border-top:1px solid var(--rule2)}
+.baris:first-of-type{border-top:none}
+.kode{font-weight:700}
+.nama{color:var(--ink2);font-size:13.5px;margin-left:8px}
+.rinci{color:var(--ink3);font-size:12.5px;margin-top:3px}
+.nilai{font-size:17px;font-weight:600;white-space:nowrap;text-align:right}
+.nilai.tinggi{color:var(--stamp)}
+.nilai.kosong{color:var(--ink3);font-weight:400}
+.tanda{margin-top:4px;display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap}
+.tag{font-size:10px;letter-spacing:.06em;text-transform:uppercase;font-weight:600;
+  padding:2px 7px;border-radius:2px;border:1px solid currentColor}
+.tag.n{color:var(--stamp)} .tag.u{color:var(--amber)} .tag.d{color:var(--ink3)}
+
+.strip{display:flex;gap:2px;margin-top:6px;flex-wrap:wrap}
+.strip i{width:14px;height:18px;border:1px solid var(--rule);border-radius:1px;display:block}
+.strip i[data-u="0"],.strip i[data-u="1"]{background:#DCE9E0}
+.strip i[data-u="2"],.strip i[data-u="3"]{background:#EBDFC0}
+.strip i[data-u="4"],.strip i[data-u="5"]{background:#D9A98D;border-color:#C08A6C}
+.strip i[data-u="6"]{background:#C97F6E;border-color:#A85E4E}
+.strip .sela{width:5px;border:none;background:transparent}
+.legenda{display:flex;gap:14px;align-items:center;color:var(--ink3);font-size:11.5px;
+  margin-top:16px;flex-wrap:wrap}
+.legenda i{width:11px;height:13px;border:1px solid var(--rule);border-radius:1px;display:block}
+.legenda span{display:flex;gap:5px;align-items:center}
+
+.form{margin-top:26px;border:1px solid var(--rule);background:#fff}
+.form .kepala{background:var(--field);border-bottom:1px solid var(--rule);padding:12px 16px;
+  display:flex;flex-wrap:wrap;gap:16px;align-items:flex-end}
+.form .isi{padding:16px}
+label{font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink2);
+  font-weight:600;display:block;margin-bottom:4px}
+select,input[type=date],input[type=text]{font:inherit;font-size:14px;color:var(--ink);
+  background:#fff;border:1px solid var(--rule);border-radius:2px;padding:7px 9px;min-width:120px}
+input.num{text-align:right}
+select:focus,input:focus{outline:2px solid var(--ink);outline-offset:1px;border-color:var(--ink)}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th{font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink2);
+  font-weight:600;text-align:left;padding:6px 8px;border-bottom:1px solid var(--rule)}
+th.kanan,td.kanan{text-align:right} th.tengah,td.tengah{text-align:center}
+td{padding:5px 8px;border-bottom:1px solid var(--rule2)}
+td input[type=text]{width:100%;min-width:80px}
+tr.grupTgl td{background:var(--field2);font-weight:600;font-size:12px;letter-spacing:.05em;
+  text-transform:uppercase;color:var(--ink2)}
+tr.terkunci td{color:var(--ink3);background:var(--field2)}
+tr.nihil td input.num{opacity:.35}
+button.aksi{font:inherit;font-weight:600;font-size:14px;background:var(--ink);color:var(--paper);
+  border:1px solid var(--ink);border-radius:2px;padding:9px 20px;cursor:pointer}
+button.aksi:hover{background:#1B3550}
+button.aksi[disabled]{opacity:.45;cursor:not-allowed}
+button.halus{background:#fff;color:var(--ink);font:inherit;font-size:13px;border:1px solid var(--rule);
+  border-radius:2px;padding:7px 13px;cursor:pointer}
+.bar{display:flex;gap:12px;align-items:center;margin-top:14px;flex-wrap:wrap}
+.pesan{font-size:13px;color:var(--ok);font-weight:500}
+.pesan.gagal{color:var(--stamp)}
+.kosongan{padding:26px 16px;color:var(--ink2);font-size:14px}
+.catatan{margin-top:9px;color:var(--ink3);font-size:12.5px}
+.kartuUnit{border:1px solid var(--rule);margin-bottom:14px;background:#fff}
+.kartuUnit .atas{display:flex;flex-wrap:wrap;gap:12px;justify-content:space-between;
+  align-items:baseline;padding:11px 14px;background:var(--field2);border-bottom:1px solid var(--rule2)}
+.kartuUnit .dalam{padding:12px 14px}
+.mode{margin-top:26px;padding:10px 14px;border:1px dashed var(--rule);color:var(--ink2);
+  font-size:12.5px;background:var(--field2)}
+.segmen{display:inline-flex;border:1px solid var(--rule);border-radius:2px;overflow:hidden}
+.segmen button{font:inherit;font-size:13px;font-weight:600;background:#fff;color:var(--ink2);
+  border:none;padding:7px 16px;cursor:pointer;min-height:38px}
+.segmen button+button{border-left:1px solid var(--rule)}
+.segmen button.on{background:var(--ink);color:var(--paper)}
+.gulir{overflow-x:auto;-webkit-overflow-scrolling:touch}
+@media (max-width:760px){
+  body{font-size:14.5px}
+  nav{overflow-x:auto;scrollbar-width:none}
+  nav::-webkit-scrollbar{display:none}
+  nav button{white-space:nowrap;padding:9px 13px}
+  .angka{grid-template-columns:1fr 1fr}
+  .angka>div{border-right:1px solid var(--rule2);border-bottom:1px solid var(--rule2);padding:11px 13px}
+  .angka .val{font-size:20px}
+  .nama{display:block;margin-left:0;margin-top:1px}
+  .baris{grid-template-columns:1fr;gap:4px}
+  .baris>div:last-child{display:flex;justify-content:space-between;align-items:center;
+    border-top:1px dashed var(--rule2);padding-top:6px;margin-top:2px}
+  .nilai{text-align:left;font-size:19px}
+  .tanda{justify-content:flex-end}
+  .form .kepala>div{flex:1 1 140px}
+  select,input[type=date],input[type=text]{width:100%;min-width:0;min-height:40px}
+  button.aksi{width:100%;min-height:44px}
+  table.stack,table.stack tbody,table.stack tr,table.stack td{display:block;width:100%}
+  table.stack thead{display:none}
+  table.stack tr{border:1px solid var(--rule);margin-bottom:9px;padding:8px 10px;background:#fff}
+  table.stack tr.grupTgl{background:var(--field);border:none;margin:14px 0 6px;padding:5px 10px}
+  table.stack td{border:none;padding:4px 0;display:flex;justify-content:space-between;
+    align-items:center;gap:12px}
+  table.stack td::before{content:attr(data-l);font-size:10.5px;letter-spacing:.07em;
+    text-transform:uppercase;color:var(--ink2);font-weight:600}
+  table.stack td:first-child::before,table.stack td:nth-child(2)::before{display:none}
+  table.stack td:first-child{font-weight:700;font-size:13px;color:var(--ink2)}
+  table.stack td:nth-child(2){font-weight:600;border-bottom:1px solid var(--rule2);padding-bottom:6px}
+  table.stack td input{max-width:170px;min-height:40px}
+  input[type=checkbox]{width:20px;height:20px}
+}
+@media (max-width:420px){ .angka{grid-template-columns:1fr} }
+@media print{
+  header,nav,.mode,.bar,#panPosisi,#panOmset,#panCollect{display:none!important}
+  #cetak{display:block!important}
+}
+#cetak{display:none}
+</style>
+</head>
+<body>
+
+<div id="gerbang" style="display:none;min-height:70vh;align-items:center;justify-content:center;
+  padding:40px 20px;text-align:center">
+  <div style="max-width:420px">
+    <h1 style="margin:0 0 6px">Cash Position Report</h1>
+    <p style="color:var(--ink2);font-size:14px;margin:0 0 26px">
+      Masuk dengan akun Google yang terdaftar. Akun yang tidak ada di daftar akses
+      tidak bisa membuka data.</p>
+    <div id="tombolMasuk" style="display:flex;justify-content:center"></div>
+    <p id="pesanMasuk" style="color:var(--stamp);font-size:13.5px;margin-top:18px;min-height:20px"></p>
+  </div>
+</div>
+
+<div id="aplikasi" style="display:none">
+
+<header>
+  <div class="kop">
+    <div>
+      <h1>Cash Position Report</h1>
+      <p class="sub" id="subKop">memuat…</p>
+    </div>
+    <div>
+      <label for="tglAcuan">Tanggal acuan</label>
+      <input type="date" id="tglAcuan" value="2026-07-20">
+    </div>
+  </div>
+  <nav role="tablist">
+    <button role="tab" id="tabPosisi" aria-selected="true" onclick="pilihTab('posisi')">Cash position</button>
+    <button role="tab" id="tabOmset" aria-selected="false" onclick="pilihTab('omset')">Isi omset</button>
+    <button role="tab" id="tabCollect" aria-selected="false" onclick="pilihTab('collect')">Total collect</button>
+    <button role="tab" id="tabExport" aria-selected="false" onclick="pilihTab('export')">Export</button>
+    <button role="tab" id="tabAnalisa" aria-selected="false" hidden onclick="pilihTab('analisa')">Analisa</button>
+  </nav>
+</header>
+
+<div class="wrap">
+  <section id="panPosisi">
+    <div class="angka">
+      <div><div class="lbl">Outstanding</div><div class="val num" id="aBelum">—</div></div>
+      <div><div class="lbl">On hand</div><div class="val num" id="aDiGC">—</div></div>
+      <div><div class="lbl">Aging tertua</div><div class="val num" id="aUmur">—</div></div>
+    </div>
+    <div class="bar" style="margin-top:16px">
+      <label style="display:flex;align-items:center;gap:7px;text-transform:none;letter-spacing:0;
+        font-size:13px;font-weight:500;color:var(--ink2);margin:0">
+        <input type="checkbox" id="angkaPenuh" onchange="gambarPosisi()"> Tampilkan angka penuh</label>
+      <button class="halus" onclick="salinPosisi(this)">Salin tabel posisi</button>
+    </div>
+    <div id="daftar"></div>
+    <div class="legenda">
+      <span>Tiap kotak satu hari omset yang belum disetor</span>
+      <span><i style="background:#DCE9E0"></i>0–1 hari</span>
+      <span><i style="background:#EBDFC0"></i>2–3 hari</span>
+      <span><i style="background:#D9A98D"></i>4–5 hari</span>
+      <span><i style="background:#C97F6E"></i>&gt; 5 hari</span>
+    </div>
+  </section>
+
+  <section id="panOmset" hidden>
+    <div class="form">
+      <div class="kepala">
+        <div><label for="oTgl">Tanggal omset</label><input type="date" id="oTgl" onchange="gambarOmset()"></div>
+        <div><label>Entitas</label>
+          <div class="segmen" id="segOmset">
+            <button class="on" data-e="VD" onclick="setEnt('omset','VD')">VD</button>
+            <button data-e="TERAS" onclick="setEnt('omset','TERAS')">Teras</button>
+          </div></div>
+        <div style="flex:1"></div>
+        <button class="aksi" onclick="simpanOmset()">Simpan omset</button>
+        <span class="pesan" id="pesanOmset"></span>
+      </div>
+      <div class="isi" id="isiOmset"></div>
+    </div>
+  </section>
+
+  <section id="panCollect" hidden>
+    <div class="form">
+      <div class="kepala">
+        <div><label for="cCollect">Tanggal collect</label><input type="date" id="cCollect"></div>
+        <div><label for="cSetor">Tanggal setor</label><input type="date" id="cSetor"></div>
+        <div><label for="cTambah">Tambah unit lain</label>
+          <select id="cTambah" onchange="tambahUnit()"></select></div>
+        <div><label>Entitas</label>
+          <div class="segmen" id="segCollect">
+            <button class="on" data-e="VD" onclick="setEnt('collect','VD')">VD</button>
+            <button data-e="TERAS" onclick="setEnt('collect','TERAS')">Teras</button>
+          </div></div>
+      </div>
+      <div class="isi" id="isiCollect"></div>
+    </div>
+  </section>
+
+  <section id="panExport" hidden>
+    <div class="form">
+      <div class="kepala">
+        <div><label for="eUnit">Unit</label><select id="eUnit" onchange="gambarExport()"></select></div>
+        <div><label for="eBulan">Bulan</label><input type="month" id="eBulan" value="2026-07" onchange="isiPeriode();gambarExport()"></div>
+        <div><label for="ePeriode">Period di JV</label><input type="text" id="ePeriode" style="min-width:150px"></div>
+        <div><label for="eKode">Kode JV</label><input type="text" id="eKode" style="min-width:90px" oninput="pratinjauJV()"></div>
+        <div><label>Contoh nomor</label><div class="num" id="ePratinjau" style="font-weight:600;padding-top:7px">—</div></div>
+      </div>
+      <div class="isi" id="isiExport"></div>
+    </div>
+  </section>
+
+  <section id="panAnalisa" hidden>
+    <div class="form">
+      <div class="kepala">
+        <div><label for="aBulan">Bulan</label>
+          <input type="month" id="aBulan" value="2026-07" onchange="gambarAnalisa()"></div>
+      </div>
+      <div class="isi" id="isiAnalisa"></div>
+    </div>
+  </section>
+
+  <div class="mode" id="mode"></div>
+  <div class="bar" style="justify-content:flex-end">
+    <span class="rinci" id="siapa"></span>
+    <button class="halus" onclick="keluar()">Keluar</button>
+  </div>
+</div>
+</div>
+
+<div id="cetak"></div>
+
+<script>
+/* Data contoh untuk pratinjau saja. Semuanya karangan. Tidak ada nomor
+   rekening, kode akun, nama unit, atau nilai omset yang sebenarnya. */
+const MASTER_CONTOH=[
+ ["UNIT-A","Unit contoh A","A1","Outlet A1","KANTOR","Kantor",1,"VHP_DESKTOP",
+  "0000-00001","BANK - 000-000-0001","0000-00002","0000-00003","VD"],
+ ["UNIT-B","Unit contoh B","B1","Outlet B1","JAKARTA","Titik B",1,"PLS",
+  "0000-00011","BANK - 000-000-0002","0000-00002","0000-00003","VD"],
+ ["UNIT-B","Unit contoh B","B2","Outlet B2","JAKARTA","Titik B",2,"PLS",
+  "0000-00011","BANK - 000-000-0002","0000-00002","0000-00003","VD"],
+ ["UNIT-C","Unit contoh C","C1","Outlet C1","BEKASI","Titik C",1,"VHP_CLOUD",
+  "0000-00021","BANK - 000-000-0003","0000-00002","0000-00003","TERAS"]];
+const ZONA_CONTOH=[["KANTOR",0,"Tiap hari"],["JAKARTA",145000,"Sen"],["BEKASI",265000,"Sel"],
+                   ["TANGSEL",348000,"Rab"],["BOGOR",508000,"Kam"]];
+const CONFIG_CONTOH={SLA_HARI:7,ALERT_NILAI:30000000,BATAS_DATA:3,NAMA_PT:"NAMA PT"};
+const DB_CONTOH=[];
+const JENIS_CONTOH=[["OMSET","Omset F&B","0000-00002",true],
+                    ["DEPOSIT","Advance deposit tamu","0000-00004",false]];
+const LAIN_CONTOH=[];
+
+/* ============================================================
+   Sambungan ke Apps Script.
+   Isi dua nilai ini setelah menerbitkan web app dan membuat
+   OAuth Client ID di Google Cloud Console.
+   ============================================================ */
+const API_URL   = "https://script.google.com/macros/s/AKfycbxfNKv2VdBopCHHKfHQGMvH8ehw8htKMfofdtmoW67aaA_GS6UGEvdLpTh1CHlU3HJc8A/exec";
+const CLIENT_ID = "845003258947-ks5b9fejr4506galch549h1kqg0r0jjj.apps.googleusercontent.com";
+
+const modeAPI   = API_URL.indexOf("script.google.com") >= 0;
+const adaServer = modeAPI;
+let ID_TOKEN = "";
+try{ ID_TOKEN = sessionStorage.getItem("cpr_token") || ""; }catch(e){}
+let DATA={master:[],zona:[],config:{},db:[]};
+async function panggil(fn,arg){
+  if(!modeAPI) throw new Error("mode pratinjau");
+  if(!ID_TOKEN) throw new Error("Belum masuk.");
+  const res=await fetch(API_URL,{method:"POST",
+    headers:{"Content-Type":"text/plain;charset=utf-8"},
+    body:JSON.stringify({aksi:fn,data:arg,idToken:ID_TOKEN})});
+  if(!res.ok) throw new Error("Jaringan bermasalah ("+res.status+").");
+  const j=await res.json();
+  if(!j.ok){
+    if(j.galat==="AKSES_DITOLAK"){ tolak("Akun Anda tidak terdaftar, atau sesi sudah berakhir."); }
+    throw new Error(j.galat||"Gagal.");
+  }
+  return j.hasil;
+}
+function tolak(pesan){
+  ID_TOKEN=""; sessionStorage.removeItem("cpr_token");
+  document.getElementById("aplikasi").style.display="none";
+  const g=document.getElementById("gerbang");
+  g.style.display="flex";
+  document.getElementById("pesanMasuk").textContent=pesan||"";
+  gambarTombolMasuk();
+}
+function keluar(){ tolak("Sudah keluar."); }
+function gambarTombolMasuk(){
+  const kotak=document.getElementById("tombolMasuk");
+  if(!kotak||!window.google||!google.accounts||!google.accounts.id)return;
+  kotak.innerHTML="";
+  google.accounts.id.initialize({client_id:CLIENT_ID,callback:terimaToken});
+  google.accounts.id.renderButton(kotak,{theme:"outline",size:"large",text:"signin_with",
+    locale:"id",width:280});
+}
+async function terimaToken(res){
+  ID_TOKEN=res.credential;
+  sessionStorage.setItem("cpr_token",ID_TOKEN);
+  document.getElementById("pesanMasuk").textContent="Memeriksa akses…";
+  await muat();
+}
+
+async function muat(){
+  if(adaServer){
+    try{ DATA=await panggil("muatData");
+      document.getElementById("mode").textContent="Terhubung ke Google Sheet.";
+      mulai(); return;
+    }catch(e){
+      document.getElementById("mode").textContent="Tidak bisa membaca data. "+e.message;
+    }
+  }
+  DATA={master:MASTER_CONTOH,zona:ZONA_CONTOH,config:CONFIG_CONTOH,
+        db:DB_CONTOH.map(r=>({tgl:r[0],unit:r[1],outlet:r[2],lunch:r[3],dinner:r[4],bfast:r[5],
+                              tglCollect:r[6],tglSetor:r[7],totalCollect:r[8],catatan:r[9]||""})),
+        lain:LAIN_CONTOH.map(x=>({...x})),jenis:JENIS_CONTOH,
+        aku:{nama:"Pratinjau",peran:"ADMIN"}};
+  document.getElementById("mode").textContent=
+    "Mode pratinjau dengan data contoh. Perubahan tidak tersimpan.";
+  mulai();
+}
+window.addEventListener("load",()=>{ if(modeAPI&&!ID_TOKEN) setTimeout(gambarTombolMasuk,300); });
+
+const rp=n=>new Intl.NumberFormat("id-ID").format(Math.round(n||0));
+/* Isian angka ditampilkan dengan pemisah ribuan sambil diketik.
+   angkaDari membaca kembali nilainya sebagai bilangan. */
+const fmtRibu=v=>{const d=String(v==null?"":v).replace(/\D/g,"");
+  return d?new Intl.NumberFormat("id-ID").format(+d):"";};
+const angkaDari=v=>{const d=String(v==null?"":v).replace(/\D/g,"");return d?+d:0;};
+function rapikan(inp){
+  const pos=inp.selectionStart==null?String(inp.value).length:inp.selectionStart;
+  const digitKiri=String(inp.value).slice(0,pos).replace(/\D/g,"").length;
+  inp.value=fmtRibu(inp.value);
+  let n=0,i=0;
+  while(i<inp.value.length&&n<digitKiri){ if(/\d/.test(inp.value[i]))n++; i++; }
+  try{inp.setSelectionRange(i,i);}catch(e){}
+}
+const penuh=()=>{const e=document.getElementById("angkaPenuh");return e&&e.checked;};
+const mio=n=>(n||0)===0?"—":penuh()?new Intl.NumberFormat("id-ID").format(Math.round(n))
+  :new Intl.NumberFormat("id-ID",{minimumFractionDigits:1,maximumFractionDigits:1}).format(n/1e6)+" Mio";
+const rb=n=>(n||0)===0?"—":new Intl.NumberFormat("id-ID").format(Math.round(n/1000))+" rb";
+const HARI=["Min","Sen","Sel","Rab","Kam","Jum","Sab"];
+const BULAN=["Jan","Feb","Mar","Apr","Mei","Jun","Jul","Agu","Sep","Okt","Nov","Des"];
+const tglTeks=s=>{if(!s)return"—";const d=new Date(s+"T00:00:00");return d.getDate()+" "+BULAN[d.getMonth()];};
+const beda=(a,b)=>Math.round((new Date(b+"T00:00:00")-new Date(a+"T00:00:00"))/86400000);
+/* Kalau kolom tanggal dikosongkan, jangan biarkan seluruh halaman mati.
+   Kembali ke hari ini dan pulihkan isian kolomnya. */
+const hariIni=()=>{const d=new Date();d.setMinutes(d.getMinutes()-d.getTimezoneOffset());
+  return d.toISOString().slice(0,10);};
+function acuan(){
+  const e=document.getElementById("tglAcuan");
+  const v=e?String(e.value||""):"";
+  if(/^\d{4}-\d{2}-\d{2}$/.test(v)&&!isNaN(new Date(v+"T00:00:00")))return v;
+  const t=hariIni(); if(e)e.value=t; return t;
+}
+const total=r=>(+r.lunch||0)+(+r.dinner||0)+(+r.bfast||0);
+const kosong=r=>(r.lunch===""||r.lunch==null)&&(r.dinner===""||r.dinner==null)&&(r.bfast===""||r.bfast==null);
+function geser(t,n){
+  const d=new Date(t+"T00:00:00");
+  if(isNaN(d))return "";
+  d.setDate(d.getDate()+n);
+  d.setMinutes(d.getMinutes()-d.getTimezoneOffset());
+  return d.toISOString().slice(0,10);
+}
+
+function unitUnik(){
+  const m=new Map();
+  DATA.master.forEach(x=>{
+    if(!m.has(x[0]))m.set(x[0],{kode:x[0],nama:x[1],zona:x[4],titik:x[5],varian:x[7],
+      akunBank:x[8],namaBank:x[9],akunClr:x[10],akunOvr:x[11],
+      entitas:(x[12]||"VD").toUpperCase(),outlet:[]});
+    m.get(x[0]).outlet.push({kode:x[2],nama:x[3],urut:+x[6]||1});});
+  const a=[...m.values()]; a.forEach(u=>u.outlet.sort((p,q)=>p.urut-q.urut)); return a;
+}
+function zonaHari(t){
+  const d=new Date(t+"T00:00:00"); if(isNaN(d))return null;
+  const h=HARI[d.getDay()];
+  const z=DATA.zona.find(x=>x[2]===h);return z?z[0]:null;}
+function biaya(z){const x=DATA.zona.find(a=>a[0]===z);return x?+x[1]||0:0;}
+function rotasiBerikut(t){
+  for(let i=1;i<=7;i++){const d=geser(t,i);if(d&&zonaHari(d))return{tgl:d,zona:zonaHari(d)};}
+  return null;}
+
+function status(r){const A=acuan();
+  if(r.tgl>=A)return"";
+  if(kosong(r))return"BELUM DIISI";
+  if(!r.tglCollect||r.tglCollect>=A)return"OUTSTANDING";
+  if(!r.tglSetor||r.tglSetor>=A)return"ON HAND";
+  return"DISETOR";}
+
+function statusLain(x){
+  const A=acuan();
+  if(x.tgl>=A)return"";
+  if(!x.tglCollect||x.tglCollect>=A)return"OUTSTANDING";
+  if(!x.tglSetor||x.tglSetor>=A)return"ON HAND";
+  return"DISETOR";
+}
+const lainUnit=(kode,st)=>(DATA.lain||[]).filter(x=>x.unit===kode&&(!st||statusLain(x)===st));
+const namaJenis=k=>{const j=(DATA.jenis||[]).find(a=>a[0]===k);return j?j[1]:k;};
+
+function ringkas(u){
+  const A=acuan(),b=DATA.db.filter(r=>r.unit===u.kode);
+  const out=b.filter(r=>status(r)==="OUTSTANDING");
+  const oh=b.filter(r=>status(r)==="ON HAND");
+  const hari=[...new Set(out.map(r=>r.tgl))].sort();
+  const terakhir=b.filter(r=>r.tgl<A&&!kosong(r)).map(r=>r.tgl).sort().pop()||null;
+  const lOut=lainUnit(u.kode,"OUTSTANDING"), lOh=lainUnit(u.kode,"ON HAND");
+  const kasLain=lOut.reduce((s,x)=>s+x.nilai,0);
+  const tglLain=lOut.map(x=>x.tgl);
+  const semuaTgl=[...new Set(hari.concat(tglLain))].sort();
+  return{u,kas:out.reduce((s,r)=>s+total(r),0)+kasLain,
+    kasOmset:out.reduce((s,r)=>s+total(r),0),kasLain,lain:lOut,
+    onHand:oh.reduce((s,r)=>s+(+r.totalCollect||0),0)+lOh.reduce((s,x)=>s+x.totalCollect,0),
+    hari:semuaTgl,
+    umur:semuaTgl.length?beda(semuaTgl[0],A):0,terakhir,
+    tanpaInput:terakhir?beda(terakhir,A):999};
+}
+
+/* ================= CASH POSITION ================= */
+function gambarPosisi(){
+  const A=acuan(),zHari=zonaHari(A),bes=rotasiBerikut(A);
+  const d=new Date(A+"T00:00:00");
+  document.getElementById("subKop").innerHTML=
+    HARI[d.getDay()]+", "+d.getDate()+" "+BULAN[d.getMonth()]+" "+d.getFullYear()+
+    (zHari?" &nbsp;·&nbsp; rotasi <b>"+zHari+"</b>":" &nbsp;·&nbsp; <b>di luar hari kerja</b>");
+
+  const R=unitUnik().map(ringkas);
+  document.getElementById("aBelum").textContent=mio(R.reduce((s,x)=>s+x.kas,0));
+  document.getElementById("aDiGC").textContent=mio(R.reduce((s,x)=>s+x.onHand,0));
+  const um=Math.max(0,...R.map(x=>x.umur));
+  document.getElementById("aUmur").innerHTML=um?um+'<small>hari</small>':"—";
+
+  const AL=+DATA.config.ALERT_NILAI||3e7;
+  const rot=R.filter(x=>zHari&&(x.u.zona===zHari||x.u.zona==="KANTOR"));
+  const sisa=R.filter(x=>!rot.includes(x));
+  const besar=sisa.filter(x=>x.kas>=AL||(bes&&x.u.zona!==bes.zona&&x.kas>=AL));
+  const besok=bes?R.filter(x=>x.u.zona===bes.zona&&!besar.includes(x)&&!rot.includes(x)):[];
+
+  const zonaBiaya=arr=>{const z=[...new Set(arr.filter(x=>x.u.zona!=="KANTOR").map(x=>x.u.zona))];
+    return z.reduce((s,q)=>s+biaya(q),0);};
+  const bHari=zonaBiaya(rot), bBesar=zonaBiaya(besar), bBesok=zonaBiaya(besok);
+
+  let h="";
+  h+=blok("Rotasi hari ini"+(zHari?" · "+zHari:""),
+        zHari?"Dijadwalkan untuk "+HARI[d.getDay()]:"Tidak ada rotasi di hari ini",
+        bHari, rot, A);
+  h+=blok("High value di luar rotasi",
+        "Nilai di atas "+mio(AL)+", layak dipertimbangkan ikut diangkut hari ini",
+        bBesar, besar, A);
+  if(bes) h+=blok("Rotasi berikutnya · "+bes.zona+" · "+tglTeks(bes.tgl),
+        "Belum perlu dijemput hari ini",
+        bBesok, besok, A);
+  h+='<div class="blok"><div class="judul"><h2>Total estimasi transport hari ini</h2>'+
+     '<span class="biaya"><b>'+rb(bHari+bBesar)+'</b></span></div>'+
+     '<p class="ket">Dihitung per zona per hari, bukan per kunjungan. '+
+     'Unit dalam satu zona ditempuh dalam satu rute yang sama.</p></div>';
+  document.getElementById("daftar").innerHTML=h;
+}
+function blok(judul,ket,biayaTotal,arr,A){
+  let h='<div class="blok"><div class="judul"><h2>'+judul+'</h2>'+
+        '<span class="biaya">estimasi transport <b>'+rb(biayaTotal)+'</b></span></div>'+
+        '<p class="ket">'+ket+'</p>';
+  if(!arr.length) return h+'<div class="kosongan">Tidak ada unit di bagian ini.</div></div>';
+  arr.sort((a,b)=>b.kas-a.kas);
+  const AL=+DATA.config.ALERT_NILAI||3e7, SLA=+DATA.config.SLA_HARI||7, BD=+DATA.config.BATAS_DATA||3;
+  arr.forEach(x=>{
+    const tinggi=x.kas>AL,tag=[];
+    if(tinggi)tag.push('<span class="tag n">high value</span>');
+    if(x.umur>SLA)tag.push('<span class="tag u">aging</span>');
+    if(x.tanpaInput>BD)tag.push('<span class="tag d">no input</span>');
+    let rinci,strip="";
+    if(x.hari.length){
+      rinci="Omset "+tglTeks(x.hari[0])+"–"+tglTeks(x.hari[x.hari.length-1])+
+            " · "+x.hari.length+" hari · aging "+x.umur+" hari";
+      let prev=null;
+      strip='<div class="strip" aria-hidden="true">'+x.hari.map(t=>{
+        const u=Math.min(6,beda(t,A));
+        const s=prev&&beda(prev,t)>1?'<i class="sela"></i>':'';prev=t;
+        return s+'<i data-u="'+u+'" title="'+tglTeks(t)+'"></i>';}).join("")+'</div>';
+    } else rinci=x.terakhir?"Belum ada input sejak "+tglTeks(x.terakhir):"Belum ada input";
+    if(x.kasLain>0) rinci+=' · termasuk '+mio(x.kasLain)+' '+
+      x.lain.map(l=>namaJenis(l.jenis).toLowerCase()).filter((v,i,a)=>a.indexOf(v)===i).join(", ");
+    h+='<div class="baris"><div><span class="kode">'+x.u.kode+'</span>'+
+       '<span class="nama">'+x.u.nama+'</span><div class="rinci">'+rinci+'</div>'+strip+'</div>'+
+       '<div><div class="nilai '+(tinggi?"tinggi":(x.kas?"":"kosong"))+'">'+mio(x.kas)+'</div>'+
+       (x.onHand?'<div class="rinci" style="text-align:right">on hand '+mio(x.onHand)+'</div>':'')+
+       (tag.length?'<div class="tanda">'+tag.join("")+'</div>':'')+'</div></div>';
+  });
+  return h+'</div>';
+}
+
+function salinPosisi(t){
+  const A=acuan();
+  const aoa=[["Unit","Nama","Entitas","Zona","Outstanding","On hand","Hari omset",
+              "Aging hari","Omset dari","Omset sampai","Input terakhir"]];
+  unitUnik().map(ringkas).sort((a,b)=>b.kas-a.kas).forEach(x=>{
+    aoa.push([x.u.kode,x.u.nama,x.u.entitas,x.u.zona,x.kas,x.onHand,x.hari.length,
+              x.umur,x.hari[0]||"",x.hari[x.hari.length-1]||"",x.terakhir||""]);
+  });
+  salin(aoa,t);
+}
+
+/* ================= ISI OMSET ================= */
+function barisTertinggal(sampai){
+  const ent=new Set(unitEnt("omset").map(u=>u.kode));
+  return DATA.db.filter(r=>r.tgl<sampai&&kosong(r)&&ent.has(r.unit))
+    .sort((a,b)=>a.tgl.localeCompare(b.tgl)||a.unit.localeCompare(b.unit));
+}
+function gambarOmset(){
+  const tgl=document.getElementById("oTgl").value;
+  if(!tgl){document.getElementById("isiOmset").innerHTML='<div class="kosongan">Pilih tanggal.</div>';return;}
+  const tert=barisTertinggal(tgl);
+  let h="";
+  if(tert.length){
+    h+='<div class="gulir"><table class="stack"><thead><tr><th colspan="6">Tertinggal — belum diisi dan belum ditandai</th></tr>'+
+       '<tr><th>Tanggal</th><th>Outlet</th><th class="kanan">Lunch</th><th class="kanan">Dinner</th>'+
+       '<th class="kanan">Breakfast</th><th class="tengah">Tidak ada omset</th></tr></thead><tbody>';
+    let tglAkhir=null;
+    tert.forEach(r=>{
+      const o=DATA.master.find(m=>m[0]===r.unit&&m[2]===r.outlet);
+      if(r.tgl!==tglAkhir){tglAkhir=r.tgl;
+        h+='<tr class="grupTgl"><td colspan="6">'+tglTeks(r.tgl)+'</td></tr>';}
+      h+=isiBarisOmset(r,o?o[3]:r.outlet,r.tgl);
+    });
+    h+='</tbody></table></div><p class="catatan">Baris ini muncul terus sampai diisi atau ditandai tidak ada omset.</p>';
+  }
+  h+='<div class="gulir"><table class="stack" style="margin-top:'+(tert.length?"22px":"0")+'"><thead>'+
+     '<tr><th colspan="6">'+tglTeks(tgl)+'</th></tr>'+
+     '<tr><th>Unit</th><th>Outlet</th><th class="kanan">Lunch</th><th class="kanan">Dinner</th>'+
+     '<th class="kanan">Breakfast</th><th class="tengah">Tidak ada omset</th></tr></thead><tbody>';
+  unitEnt("omset").forEach(u=>u.outlet.forEach(o=>{
+    let r=DATA.db.find(x=>x.unit===u.kode&&x.outlet===o.kode&&x.tgl===tgl);
+    if(!r){r={tgl,unit:u.kode,outlet:o.kode,lunch:"",dinner:"",bfast:"",tglCollect:"",tglSetor:"",totalCollect:0};
+      DATA.db.push(r);}
+    h+=isiBarisOmset(r,o.nama,tgl,u.kode);
+  }));
+  h+='</tbody></table></div>';
+  h+='<p class="catatan">Centang "tidak ada omset" untuk shift yang memang nihil. '+
+     'Sel yang dibiarkan kosong dianggap belum diisi dan akan muncul lagi besok.</p>';
+  document.getElementById("isiOmset").innerHTML=h;
+}
+function isiBarisOmset(r,namaOutlet,tgl,kodeUnit){
+  const id=r.tgl+"|"+r.unit+"|"+r.outlet;
+  const kunci=!!r.tglCollect;
+  const nihil=!kosong(r)&&total(r)===0;
+  return '<tr class="'+(kunci?"terkunci":"")+(nihil?" nihil":"")+'" data-id="'+id+'">'+
+    (kodeUnit?'<td>'+kodeUnit+'</td>':'<td>'+r.unit+'</td>')+
+    '<td>'+namaOutlet+'</td>'+
+    ['lunch','dinner','bfast'].map(f=>
+      '<td class="kanan" data-l="'+(f==="bfast"?"breakfast":f)+'"><input class="num" inputmode="numeric" data-id="'+id+'" data-f="'+f+
+      '" value="'+((r[f]===0||r[f])?fmtRibu(r[f]):"")+'"'+(kunci?" disabled":"")+
+      ' oninput="rapikan(this);lepasNihil(this)"></td>').join("")+
+    '<td class="tengah" data-l="Tidak ada omset"><input type="checkbox" data-nihil="'+id+'"'+(nihil?" checked":"")+
+      (kunci?" disabled":"")+' onchange="setNihil(this)"></td></tr>';
+}
+function setNihil(cb){
+  const id=cb.dataset.nihil;
+  document.querySelectorAll('input[data-id="'+id+'"]').forEach(i=>{
+    i.value=cb.checked?"0":""; });
+  document.querySelector('tr[data-id="'+id+'"]').classList.toggle("nihil",cb.checked);
+}
+function lepasNihil(inp){
+  const cb=document.querySelector('[data-nihil="'+inp.dataset.id+'"]');
+  if(cb&&cb.checked&&angkaDari(inp.value)>0){cb.checked=false;
+    document.querySelector('tr[data-id="'+inp.dataset.id+'"]').classList.remove("nihil");}
+}
+async function simpanOmset(){
+  const p=document.getElementById("pesanOmset");
+  const per={};
+  document.querySelectorAll("#isiOmset input[data-f]").forEach(i=>{
+    per[i.dataset.id]=per[i.dataset.id]||{};
+    per[i.dataset.id][i.dataset.f]=String(i.value).trim()===""?"":angkaDari(i.value);});
+  const baris=Object.keys(per).map(k=>{const[tgl,unit,outlet]=k.split("|");
+    return{tgl,unit,outlet,...per[k]};})
+    .filter(b=>b.lunch!==""||b.dinner!==""||b.bfast!=="");
+  if(!baris.length){p.className="pesan gagal";p.textContent="Belum ada yang diisi.";return;}
+  try{
+    if(adaServer) await panggil("simpanOmset",baris);
+    baris.forEach(b=>{const i=DATA.db.findIndex(x=>x.unit===b.unit&&x.outlet===b.outlet&&x.tgl===b.tgl);
+      if(i>=0)Object.assign(DATA.db[i],b);else DATA.db.push({...b,tglCollect:"",tglSetor:"",totalCollect:0});});
+    p.className="pesan";p.textContent=(adaServer?"Tersimpan. ":"Tersimpan sementara. ")+baris.length+" baris.";
+    gambarOmset(); gambarPosisi();
+  }catch(e){p.className="pesan gagal";p.textContent="Gagal menyimpan. "+e.message;}
+}
+
+let LAIN_BARU={};
+function tambahLain(kode){
+  const j=document.getElementById("lj_"+kode).value;
+  const n=angkaDari(document.getElementById("ln_"+kode).value);
+  const r=document.getElementById("lr_"+kode).value.trim();
+  const p=document.getElementById("pesan_"+kode);
+  if(!(n>0)){p.className="pesan gagal";p.textContent="Nilai uang lain harus lebih dari nol.";return;}
+  if(!r){p.className="pesan gagal";p.textContent="Keterangan uang lain wajib diisi.";return;}
+  LAIN_BARU[kode]=LAIN_BARU[kode]||[];
+  LAIN_BARU[kode].push({jenis:j,nilai:n,referensi:r});
+  p.className="pesan";p.textContent="Ditambahkan, belum tersimpan.";
+  gambarCollect();
+}
+function buangLain(kode,i){
+  if(LAIN_BARU[kode])LAIN_BARU[kode].splice(i,1);
+  gambarCollect();
+}
+async function hapusLain(id){
+  if(!confirm("Hapus transaksi ini?"))return;
+  try{
+    if(adaServer) await panggil("hapusLain",id);
+    DATA.lain=DATA.lain.filter(x=>x.id!==id);
+    gambarCollect();gambarPosisi();
+  }catch(e){alert("Gagal menghapus. "+e.message);}
+}
+
+/* ================= TOTAL COLLECT ================= */
+let unitTambahan=[];
+let ENT={omset:"VD",collect:"VD"};
+function setEnt(tab,e){
+  ENT[tab]=e;
+  const box=document.getElementById(tab==="omset"?"segOmset":"segCollect");
+  [...box.children].forEach(b=>b.classList.toggle("on",b.dataset.e===e));
+  if(tab==="omset")gambarOmset(); else gambarCollect();
+}
+const unitEnt=tab=>unitUnik().filter(u=>u.entitas===ENT[tab]);
+function daftarCollect(){
+  const A=acuan(),zHari=zonaHari(A);
+  const R=unitEnt("collect").map(ringkas).filter(x=>x.hari.length);
+  const rot=R.filter(x=>zHari&&(x.u.zona===zHari||x.u.zona==="KANTOR"));
+  const sisa=R.filter(x=>!rot.includes(x));
+  const tambah=R.filter(x=>unitTambahan.includes(x.u.kode)&&!rot.includes(x)&&!sisa.includes(x));
+  return [{judul:"Rotasi hari ini",arr:rot},
+          {judul:"Rotasi sebelumnya yang belum ter-collect",arr:sisa},
+          {judul:"Unit tambahan hari ini",arr:tambah}];
+}
+function gambarCollect(){
+  const A=acuan();
+  const sel=document.getElementById("cTambah");
+  sel.innerHTML='<option value="">— pilih unit —</option>'+
+    unitEnt("collect").map(u=>'<option value="'+u.kode+'">'+u.kode+'</option>').join("");
+  let h="";
+  daftarCollect().forEach(g=>{
+    if(!g.arr.length&&g.judul.startsWith("Unit tambahan"))return;
+    h+='<div class="blok"><div class="judul"><h2>'+g.judul+'</h2></div>';
+    if(!g.arr.length){h+='<div class="kosongan">Tidak ada.</div></div>';return;}
+    g.arr.forEach(x=>{
+      h+='<div class="kartuUnit"><div class="atas"><div><span class="kode">'+x.u.kode+'</span>'+
+         '<span class="nama">'+x.u.nama+'</span></div>'+
+         '<div class="num" style="font-weight:600">'+mio(x.kas)+'</div></div><div class="dalam">';
+      h+='<div class="gulir"><table><thead><tr><th style="width:40px"></th><th>Tanggal omset</th>'+
+         '<th class="kanan">Omset sistem</th><th class="kanan">Total collect</th></tr></thead><tbody>';
+      x.hari.forEach(t=>{
+        const j=DATA.db.filter(r=>r.unit===x.u.kode&&r.tgl===t&&status(r)==="OUTSTANDING")
+                       .reduce((s,r)=>s+total(r),0);
+        if(j===0)return;
+        h+='<tr><td><input type="checkbox" checked data-u="'+x.u.kode+'" data-t="'+t+'"></td>'+
+           '<td>'+tglTeks(t)+' <span class="rinci">'+beda(t,A)+' hari</span></td>'+
+           '<td class="kanan num">'+rp(j)+'</td>'+
+           '<td class="kanan"><input class="num" inputmode="numeric" data-terima="'+x.u.kode+"|"+t+
+           '" value="'+fmtRibu(j)+'" oninput="rapikan(this);hitungCollect(\''+x.u.kode+'\')"></td></tr>';
+      });
+      x.lain.forEach(l=>{
+        h+='<tr><td><input type="checkbox" checked data-ul="'+x.u.kode+'" data-id="'+l.id+'"></td>'+
+           '<td>'+tglTeks(l.tgl)+' <span class="rinci">'+namaJenis(l.jenis)+' · '+l.referensi+'</span></td>'+
+           '<td class="kanan num">'+rp(l.nilai)+'</td>'+
+           '<td class="kanan"><input class="num" inputmode="numeric" data-terimal="'+l.id+
+           '" value="'+fmtRibu(l.nilai)+'" oninput="rapikan(this);hitungCollect(\''+x.u.kode+'\')"></td></tr>';
+      });
+      h+='</tbody></table></div>';
+      h+=blokLain(x.u.kode);
+      h+='<div class="bar"><div style="min-width:200px;flex:1"><label>Catatan collect</label>'+
+         '<input type="text" data-catatan="'+x.u.kode+'" placeholder="mis. brankas belum dibuka, sebagian ditinggal"></div>'+
+         '<div><label>Total</label><div class="num" id="tot_'+x.u.kode+'" style="font-size:19px;font-weight:600">0</div></div>'+
+         '<div><label>Selisih</label><div class="num" id="sel_'+x.u.kode+'" style="font-size:19px;font-weight:600">0</div></div>'+
+         '<button class="aksi" onclick="simpanCollect(\''+x.u.kode+'\')">Simpan collect</button>'+
+         '<span class="pesan" id="pesan_'+x.u.kode+'"></span></div>';
+      h+='</div></div>';
+    });
+    h+='</div>';
+  });
+  document.getElementById("isiCollect").innerHTML=h||'<div class="kosongan">Tidak ada unit yang menunggu.</div>';
+  unitUnik().forEach(u=>hitungCollect(u.kode));
+}
+function tambahUnit(){
+  const v=document.getElementById("cTambah").value;
+  if(v&&!unitTambahan.includes(v))unitTambahan.push(v);
+  gambarCollect();
+}
+function hitungCollect(kode){
+  let terima=0,sistem=0;
+  document.querySelectorAll('[data-ul="'+kode+'"]').forEach(cb=>{
+    if(cb.checked){
+      const i=document.querySelector('[data-terimal="'+cb.dataset.id+'"]');
+      const l=(DATA.lain||[]).find(x=>x.id===cb.dataset.id);
+      terima+=angkaDari(i.value); sistem+=l?l.nilai:0;
+    }});
+  (LAIN_BARU[kode]||[]).forEach(b=>{terima+=b.nilai;sistem+=b.nilai;});
+  document.querySelectorAll('[data-terima^="'+kode+'|"]').forEach(i=>{
+    const t=i.dataset.terima.split("|")[1];
+    const cb=document.querySelector('[data-u="'+kode+'"][data-t="'+t+'"]');
+    if(cb&&cb.checked){terima+=angkaDari(i.value);
+      sistem+=DATA.db.filter(r=>r.unit===kode&&r.tgl===t&&status(r)==="OUTSTANDING")
+                     .reduce((s,r)=>s+total(r),0);}});
+  const a=document.getElementById("tot_"+kode),b=document.getElementById("sel_"+kode);
+  if(!a)return; a.textContent=rp(terima);
+  const s=terima-sistem; b.textContent=(s>0?"+":"")+rp(s);
+  b.style.color=s<0?"var(--stamp)":(s>0?"var(--amber)":"var(--ok)");
+}
+async function simpanCollect(kode){
+  const c=document.getElementById("cCollect").value,s=document.getElementById("cSetor").value;
+  const p=document.getElementById("pesan_"+kode);
+  if(!c){p.className="pesan gagal";p.textContent="Isi tanggal collect.";return;}
+  if(s&&s<c){p.className="pesan gagal";p.textContent="Tanggal setor sebelum tanggal collect.";return;}
+  const cat=(document.querySelector('[data-catatan="'+kode+'"]')||{}).value||"";
+  const pilih=[];
+  document.querySelectorAll('[data-u="'+kode+'"]').forEach(cb=>{
+    if(cb.checked){const t=cb.dataset.t;
+      const i=document.querySelector('[data-terima="'+kode+"|"+t+'"]');
+      pilih.push({tgl:t,terima:angkaDari(i.value)});}});
+  const pilihLain=[];
+  document.querySelectorAll('[data-ul="'+kode+'"]').forEach(cb=>{
+    if(cb.checked){const i=document.querySelector('[data-terimal="'+cb.dataset.id+'"]');
+      pilihLain.push({id:cb.dataset.id,terima:angkaDari(i.value)});}});
+  const lainBaru=LAIN_BARU[kode]||[];
+  if(!pilih.length&&!pilihLain.length&&!lainBaru.length){
+    p.className="pesan gagal";p.textContent="Pilih minimal satu baris.";return;}
+  try{
+    if(adaServer)await panggil("simpanCollect",{unit:kode,tglCollect:c,tglSetor:s,catatan:cat,
+                                               baris:pilih,lain:pilihLain,lainBaru:lainBaru});
+    pilih.forEach(x=>{const rs=DATA.db.filter(r=>r.unit===kode&&r.tgl===x.tgl);
+      rs.forEach((r,i)=>{r.tglCollect=c;r.tglSetor=s||"";r.totalCollect=i===0?x.terima:0;
+                         r.catatan=i===0?cat:"";});});
+    pilihLain.forEach(x=>{const l=DATA.lain.find(y=>y.id===x.id);
+      if(l){l.tglCollect=c;l.tglSetor=s||"";l.totalCollect=x.terima;l.catatan=cat;}});
+    lainBaru.forEach((b,i)=>DATA.lain.push({id:"TL-LOKAL-"+Date.now()+"-"+i,tgl:c,unit:kode,
+      jenis:b.jenis,nilai:b.nilai,referensi:b.referensi,
+      tglCollect:c,tglSetor:s||"",totalCollect:b.nilai,catatan:cat}));
+    LAIN_BARU[kode]=[];
+    p.className="pesan";p.textContent=adaServer?"Tersimpan.":"Tersimpan sementara.";
+    gambarCollect();gambarPosisi();
+  }catch(e){p.className="pesan gagal";p.textContent="Gagal. "+e.message;}
+}
+
+function blokLain(kode){
+  const jns=(DATA.jenis||[]).filter(j=>!j[3]);
+  const baru=LAIN_BARU[kode]||[];
+  let h='<div style="margin-top:14px;padding-top:12px;border-top:1px dashed var(--rule)">'+
+    '<div class="lbl" style="margin-bottom:6px">Uang lain di luar omset</div>'+
+    '<p class="rinci" style="margin:0 0 9px">Deposit acara dan penerimaan tunai lain yang tidak '+
+    'tercatat di VHP. Keterangan wajib, karena ini satu-satunya jejaknya.</p>';
+  if(baru.length){
+    h+='<div class="gulir"><table><tbody>';
+    baru.forEach((b,i)=>{
+      h+='<tr><td>'+namaJenis(b.jenis)+'</td><td>'+b.referensi+'</td>'+
+         '<td class="kanan num">'+rp(b.nilai)+'</td>'+
+         '<td class="kanan"><button class="halus" onclick="buangLain(\''+kode+'\','+i+')">Buang</button></td></tr>';
+    });
+    h+='</tbody></table></div>';
+  }
+  h+='<div class="bar" style="margin-top:8px;align-items:flex-end">'+
+     '<div><label>Jenis</label><select id="lj_'+kode+'">'+
+       jns.map(j=>'<option value="'+j[0]+'">'+j[1]+'</option>').join("")+'</select></div>'+
+     '<div><label>Nilai tunai</label><input type="text" class="num" inputmode="numeric" '+
+       'id="ln_'+kode+'" placeholder="0" oninput="rapikan(this)"></div>'+
+     '<div style="flex:2;min-width:210px"><label>Keterangan (wajib)</label>'+
+       '<input type="text" id="lr_'+kode+'" placeholder="nama acara, tanggal acara, total dan porsi tunai"></div>'+
+     '<button class="halus" onclick="tambahLain(\''+kode+'\')">Tambah</button></div></div>';
+  return h;
+}
+
+/* ================= EXPORT ================= */
+const BULAN_PANJANG=["JANUARI","FEBRUARI","MARET","APRIL","MEI","JUNI","JULI",
+                     "AGUSTUS","SEPTEMBER","OKTOBER","NOVEMBER","DESEMBER"];
+/* Kode JV diturunkan dari bulan yang dipilih: dua digit bulan diikuti dua
+   digit tahun. Pola lama menempelkan angka nol di depan kode tiga digit,
+   yang akan menghasilkan lima digit mulai Oktober. */
+function kodeDari(bulan){
+  const th=bulan.slice(2,4), bl=bulan.slice(5,7);
+  return bl+th;
+}
+function periodeDari(bulan){
+  return BULAN_PANJANG[+bulan.slice(5,7)-1]+"-"+bulan.slice(0,4);
+}
+function isiPeriode(){
+  const b=document.getElementById("eBulan").value;
+  if(!/^\d{4}-\d{2}$/.test(b))return;
+  document.getElementById("ePeriode").value=periodeDari(b);
+  document.getElementById("eKode").value=kodeDari(b);
+  pratinjauJV();
+}
+function pratinjauJV(){
+  const k=document.getElementById("eKode").value.trim();
+  const el=document.getElementById("ePratinjau");
+  if(el)el.textContent=k?"BK-GC"+k+"-001":"—";
+}
+function tglSetorBulan(kode,bulan){
+  const a=DATA.db.filter(r=>r.unit===kode&&r.tglSetor&&r.tglSetor.slice(0,7)===bulan).map(r=>r.tglSetor);
+  const b=(DATA.lain||[]).filter(x=>x.unit===kode&&x.tglSetor&&x.tglSetor.slice(0,7)===bulan).map(x=>x.tglSetor);
+  return [...new Set(a.concat(b))].sort();
+}
+function gambarExport(){
+  const kode=document.getElementById("eUnit").value,bulan=document.getElementById("eBulan").value;
+  if(!document.getElementById("eKode").value)isiPeriode();
+  const tgl=tglSetorBulan(kode,bulan);
+  if(!tgl.length){document.getElementById("isiExport").innerHTML=
+    '<div class="kosongan">Belum ada setoran untuk unit dan bulan itu.</div>';return;}
+  let h='<div class="gulir"><table><thead><tr><th style="width:40px"></th><th>Tanggal setor</th>'+
+        '<th class="kanan">Nilai</th><th class="kanan">Baris omset</th></tr></thead><tbody>';
+  tgl.forEach(t=>{
+    const b=DATA.db.filter(r=>r.unit===kode&&r.tglSetor===t);
+    h+='<tr><td><input type="checkbox" checked data-ex="'+t+'"></td><td>'+tglTeks(t)+'</td>'+
+       '<td class="kanan num">'+rp(b.reduce((s,r)=>s+(+r.totalCollect||0),0))+'</td>'+
+       '<td class="kanan num">'+b.length+'</td></tr>';
+  });
+  h+='</tbody></table></div><div class="bar">'+
+     '<button class="aksi" onclick="unduhJV()">Download JV (.xls)</button>'+
+     '<button class="halus" onclick="cetakReport()">Cetak Report (PDF)</button>'+
+     '<span class="pesan" id="pesanExport"></span></div>'+
+     '<p class="catatan">Satu file berisi satu sheet per tanggal setor. '+
+     'File dibuat ulang tiap kali diunduh, jadi isinya selalu ikut data terbaru. '+
+     'Period dan kode JV terisi sendiri dari bulan yang dipilih, dan masih bisa diubah di sini '+
+     'kalau penomoran unit itu berbeda.</p>';
+  document.getElementById("isiExport").innerHTML=h;
+}
+function tglPilihExport(){
+  return [...document.querySelectorAll("#isiExport [data-ex]")].filter(c=>c.checked).map(c=>c.dataset.ex);
+}
+function unduhJV(){
+  const kode=document.getElementById("eUnit").value,bulan=document.getElementById("eBulan").value;
+  const u=unitUnik().find(x=>x.kode===kode),tgl=tglPilihExport();
+  const p=document.getElementById("pesanExport");
+  if(!tgl.length){p.className="pesan gagal";p.textContent="Pilih minimal satu tanggal.";return;}
+  const kodeJV=(document.getElementById("eKode").value||kodeDari(bulan)).trim();
+  const periodeJV=(document.getElementById("ePeriode").value||periodeDari(bulan)).trim();
+  if(!kodeJV){p.className="pesan gagal";p.textContent="Kode JV belum diisi.";return;}
+  const semuaTgl=tglSetorBulan(kode,bulan);
+  const wb=XLSX.utils.book_new();
+  tgl.forEach(t=>{
+    const idx=semuaTgl.indexOf(t);
+    const cloud=u.varian==="VHP_CLOUD";
+    const aoa=[];
+    const jvNo="BK-GC"+kodeJV+"-"+String(idx+1).padStart(3,"0");
+    if(cloud){
+      aoa.push(["Version 1.0.0"]);
+      aoa.push([u.kode+"\nJOURNAL VOUCHER"]);
+      aoa.push([]);
+      aoa.push([periodeJV,periodeJV,"","Journal Date",fmtUS(t)]);
+      aoa.push([jvNo,jvNo]);
+      aoa.push(["CASH SALES "+u.kode,"CASH SALES "+u.kode]);
+      aoa.push([]);
+      aoa.push(["Account","Description","Debit","Credit","Remarks"]);
+    }else{
+      aoa.push([]);aoa.push(["JOURNAL VOUCHER"]);aoa.push([]);
+      aoa.push(["Period     : "+periodeJV,"","","Journal Date",fmtID(t)]);
+      aoa.push(["No. JV     : "+jvNo]);
+      aoa.push(["Name JV : CASH SALES "+u.kode]);
+      aoa.push([]);
+      aoa.push(["Description","Account","Debit","Credit","Remarks"]);
+    }
+    const hari=[...new Set(DATA.db.filter(r=>r.unit===kode&&r.tglSetor===t).map(r=>r.tgl))].sort();
+    hari.forEach(d=>{
+      const rows=DATA.db.filter(r=>r.unit===kode&&r.tgl===d&&r.tglSetor===t);
+      const tot=rows.reduce((s,r)=>s+total(r),0);
+      const terima=rows.reduce((s,r)=>s+(+r.totalCollect||0),0);
+      const vr=terima-tot;
+      const desc="CASH SALES "+u.kode+" "+fmtID(d);
+      const baris=(a,b,deb,kre)=>cloud?[b,a,deb,kre,desc]:[a,b,deb,kre,desc];
+      aoa.push(baris(u.namaBank,u.akunBank,terima,""));
+      if(u.varian==="PLS"){
+        u.outlet.forEach(o=>{
+          const sub=rows.filter(r=>r.outlet===o.kode).reduce((s,r)=>s+total(r),0);
+          const dd=desc.replace("CASH SALES ","CASH SALES "+o.kode+" ");
+          aoa.push(cloud?[u.akunClr,"CASH SALES CLEAREANCE","",sub,dd]
+                        :["CASH SALES CLEAREANCE",u.akunClr,"",sub,dd]);
+        });
+      }else aoa.push(baris("CASH SALES CLEAREANCE",u.akunClr,"",tot));
+      if(vr!==0) aoa.push(baris("OVERAGES/SHORTAGES",u.akunOvr,vr<0?Math.abs(vr):"",vr>0?vr:""));
+    });
+    // transaksi bukan omset pada tanggal setor ini
+    (DATA.lain||[]).filter(x=>x.unit===kode&&x.tglSetor===t).forEach(x=>{
+      const j=(DATA.jenis||[]).find(a=>a[0]===x.jenis);
+      const akun=j?j[2]:"", nm=j?j[1]:"DEPOSIT";
+      const dsc=nm.toUpperCase()+" "+u.kode+" "+fmtID(x.tgl)+" — "+x.referensi;
+      aoa.push(cloud?[u.akunBank,u.namaBank,x.totalCollect,"",dsc]
+                    :[u.namaBank,u.akunBank,x.totalCollect,"",dsc]);
+      aoa.push(cloud?[akun,nm.toUpperCase(),"",x.totalCollect,dsc]
+                    :[nm.toUpperCase(),akun,"",x.totalCollect,dsc]);
+    });
+    const ws=XLSX.utils.aoa_to_sheet(aoa);
+    ws["!cols"]=[{wch:26},{wch:20},{wch:16},{wch:16},{wch:26}];
+    if(cloud)ws["!merges"]=[{s:{r:1,c:0},e:{r:1,c:4}}];
+    else ws["!merges"]=[{s:{r:1,c:0},e:{r:1,c:4}}];
+    XLSX.utils.book_append_sheet(wb,ws,String(new Date(t+"T00:00:00").getDate()));
+  });
+  XLSX.writeFile(wb,"JV_"+kode+"_"+bulan.slice(2,4)+bulan.slice(5,7)+".xls",{bookType:"xls"});
+  p.className="pesan";p.textContent="File JV dibuat, "+tgl.length+" sheet, nomor BK-GC"+kodeJV+".";
+}
+const fmtID=t=>{const d=new Date(t+"T00:00:00");
+  return String(d.getDate()).padStart(2,"0")+"/"+String(d.getMonth()+1).padStart(2,"0")+"/"+d.getFullYear();};
+const fmtUS=t=>{const d=new Date(t+"T00:00:00");
+  return String(d.getMonth()+1).padStart(2,"0")+"/"+String(d.getDate()).padStart(2,"0")+"/"+d.getFullYear();};
+
+function cetakReport(){
+  const kode=document.getElementById("eUnit").value;
+  const u=unitUnik().find(x=>x.kode===kode),tgl=tglPilihExport();
+  const p=document.getElementById("pesanExport");
+  if(!tgl.length){p.className="pesan gagal";p.textContent="Pilih minimal satu tanggal.";return;}
+  let h="";
+  tgl.forEach((t,i)=>{
+    const rows=DATA.db.filter(r=>r.unit===kode&&r.tglSetor===t);
+    const hari=[...new Set(rows.map(r=>r.tgl))].sort();
+    const totTerima=rows.reduce((s,r)=>s+(+r.totalCollect||0),0);
+    h+='<div style="page-break-after:'+(i<tgl.length-1?"always":"auto")+';padding:18mm 14mm;'+
+       'font-family:Archivo,sans-serif;color:#000">';
+    h+='<div style="text-align:center;font-weight:700;font-size:15px;margin-bottom:14px">'+
+       "GENERAL CASHIER'S DAILY REMITTANCE &amp; CASH DEPOSIT REPORT</div>";
+    h+='<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px">'+
+       '<b>A. CASH REMITTANCE</b><span><b>Tgl Setor :</b> '+fmtID(t)+'</span></div>';
+    h+='<div style="font-size:11px;font-style:italic;color:#555;margin-bottom:8px">Omset tgl : '+
+       hari.map(fmtID).join(", ")+'</div>';
+    h+='<table style="width:100%;border-collapse:collapse;font-size:11px">'+
+       '<tr style="background:#1F4E78;color:#fff"><th style="border:1px solid #999;padding:4px">DATE</th>'+
+       '<th style="border:1px solid #999;padding:4px">OUTLET</th>'+
+       '<th style="border:1px solid #999;padding:4px">BREAKFAST</th>'+
+       '<th style="border:1px solid #999;padding:4px">LUNCH</th>'+
+       '<th style="border:1px solid #999;padding:4px">DINNER</th>'+
+       '<th style="border:1px solid #999;padding:4px">NET CASH</th>'+
+       '<th style="border:1px solid #999;padding:4px">AMOUNT REMITTED TO GC</th>'+
+       '<th style="border:1px solid #999;padding:4px">(SHORT) OVERAGE</th></tr>';
+    let tb=0,tl=0,td=0,tn=0,tr_=0;
+    hari.forEach(d=>{
+      const rr=rows.filter(r=>r.tgl===d);
+      const rem=rr.reduce((s,r)=>s+(+r.totalCollect||0),0);
+      rr.forEach((r,j)=>{
+        const net=total(r),remi=j===0?rem:0;
+        tb+=+r.bfast||0;tl+=+r.lunch||0;td+=+r.dinner||0;tn+=net;tr_+=remi;
+        const nm=(DATA.master.find(m=>m[0]===r.unit&&m[2]===r.outlet)||[])[3]||r.outlet;
+        h+='<tr><td style="border:1px solid #ccc;padding:3px">'+(j===0?fmtID(d):"")+'</td>'+
+           '<td style="border:1px solid #ccc;padding:3px">'+nm+'</td>'+
+           ['bfast','lunch','dinner'].map(f=>'<td style="border:1px solid #ccc;padding:3px;text-align:right">'+
+             rp(r[f]||0)+'</td>').join("")+
+           '<td style="border:1px solid #ccc;padding:3px;text-align:right">'+rp(net)+'</td>'+
+           '<td style="border:1px solid #ccc;padding:3px;text-align:right">'+rp(remi)+'</td>'+
+           '<td style="border:1px solid #ccc;padding:3px;text-align:right">'+rp(remi-net)+'</td></tr>';
+      });
+    });
+    h+='<tr style="background:#FFF2CC;font-weight:700"><td style="border:1px solid #999;padding:3px" colspan="2">TOTAL</td>'+
+       [tb,tl,td,tn,tr_,tr_-tn].map(v=>'<td style="border:1px solid #999;padding:3px;text-align:right">'+rp(v)+'</td>').join("")+
+       '</tr></table>';
+    h+='<div style="font-size:12px;margin-top:10px"><b>Total Amount</b> &nbsp; Rp'+rp(totTerima)+'</div>';
+    h+='<div style="font-size:11px;color:#555"><b>Amount In Words</b> &nbsp; '+terbilang(totTerima)+' Rupiah</div>';
+    h+='<div style="font-size:12px;margin-top:14px"><b>B. CASH DEPOSITED</b></div>';
+    [["Cash Deposited In","BCA"],["Name",DATA.config.NAMA_PT||""],["Bank Account",u.namaBank],
+     ["Deposit Date",fmtID(t)],["Amount Deposit","Rp"+rp(totTerima)],
+     ["Amount In Words",terbilang(totTerima)+" Rupiah"]].forEach(x=>{
+      h+='<div style="font-size:11px"><span style="display:inline-block;width:130px">'+x[0]+
+         '</span><b>'+x[1]+'</b></div>';});
+    h+='<div style="display:flex;justify-content:space-between;margin-top:34px;font-size:11px">'+
+       '<div>Prepared by,<div style="height:46px"></div>General Cashier</div>'+
+       '<div>Verified by,<div style="height:46px"></div>Income Auditor</div>'+
+       '<div>Approved by,<div style="height:46px"></div>Financial Controller</div></div>';
+    h+='</div>';
+  });
+  document.getElementById("cetak").innerHTML=h;
+  window.print();
+}
+function terbilang(n){n=Math.round(Math.abs(n));if(n===0)return"Nol";
+  const s=eja(n);return s.charAt(0).toUpperCase()+s.slice(1);}
+function eja(x){const sat=["","satu","dua","tiga","empat","lima","enam","tujuh","delapan","sembilan","sepuluh","sebelas"];
+  if(x<12)return sat[x];
+  if(x<20)return eja(x-10)+" belas";
+  if(x<100)return eja(Math.floor(x/10))+" puluh"+ek(x%10);
+  if(x<200)return"seratus"+ek(x-100);
+  if(x<1000)return eja(Math.floor(x/100))+" ratus"+ek(x%100);
+  if(x<2000)return"seribu"+ek(x-1000);
+  if(x<1e6)return eja(Math.floor(x/1000))+" ribu"+ek(x%1000);
+  if(x<1e9)return eja(Math.floor(x/1e6))+" juta"+ek(x%1e6);
+  return eja(Math.floor(x/1e9))+" milyar"+ek(x%1e9);}
+function ek(r){return r>0?" "+eja(r):"";}
+
+/* ================= SALIN & UNDUH ================= */
+/* Angka dikirim mentah tanpa pemisah ribuan supaya langsung terbaca
+   sebagai angka saat ditempel ke Excel atau Google Sheet. */
+function keTSV(aoa){
+  return aoa.map(b=>b.map(v=>{
+    if(v===null||v===undefined)return"";
+    if(typeof v==="number")return String(v);
+    return String(v).replace(/\t/g," ").replace(/\n/g," ");
+  }).join("\t")).join("\n");
+}
+function keCSV(aoa){
+  return aoa.map(b=>b.map(v=>{
+    if(v===null||v===undefined)return"";
+    if(typeof v==="number")return String(v);
+    const t=String(v);
+    return /[",\n;]/.test(t)?'"'+t.replace(/"/g,'""')+'"':t;
+  }).join(",")).join("\n");
+}
+function salin(aoa,tombol){
+  const teks=keTSV(aoa);
+  const sudah=()=>{const l=tombol.textContent;tombol.textContent="Tersalin";
+    setTimeout(()=>tombol.textContent=l,1600);};
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(teks).then(sudah).catch(()=>salinKuno(teks,sudah));
+  }else salinKuno(teks,sudah);
+}
+function salinKuno(teks,sudah){
+  const ta=document.createElement("textarea");
+  ta.value=teks; ta.style.position="fixed"; ta.style.opacity="0";
+  document.body.appendChild(ta); ta.focus(); ta.select();
+  try{document.execCommand("copy");sudah();}catch(e){alert("Salin otomatis ditolak browser. Blok tabelnya lalu tekan Ctrl+C.");}
+  document.body.removeChild(ta);
+}
+function unduhTeks(nama,isi,tipe){
+  const b=new Blob(["\ufeff"+isi],{type:tipe+";charset=utf-8"});
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(b); a.download=nama;
+  document.body.appendChild(a); a.click();
+  setTimeout(()=>{URL.revokeObjectURL(a.href);document.body.removeChild(a);},400);
+}
+function unduhXLSX(nama,daftar){
+  const wb=XLSX.utils.book_new();
+  daftar.forEach(x=>XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(x.aoa),x.nama));
+  XLSX.writeFile(wb,nama);
+}
+let ANALISA=null;
+
+/* ================= ANALISA ================= */
+function gambarAnalisa(){
+  const bulan=document.getElementById("aBulan").value;
+  const box=document.getElementById("isiAnalisa");
+  const rows=DATA.db.filter(r=>r.tgl.slice(0,7)===bulan);
+  if(!rows.length){box.innerHTML='<div class="kosongan">Tidak ada data di bulan itu.</div>';return;}
+
+  const U={},trip={},bawa={};
+  unitUnik().forEach(u=>U[u.kode]={nama:u.nama,zona:u.zona,ent:u.entitas,
+    omset:0,deposit:0,collect:0,isi:0,kosong:0,rupiahHari:0,lag:0,lagN:0});
+  (DATA.lain||[]).filter(x=>x.tgl.slice(0,7)===bulan).forEach(x=>{
+    const p=U[x.unit]; if(!p)return;
+    p.deposit+=x.nilai;
+    if(x.totalCollect){p.collect+=x.totalCollect;
+      bawa[x.tglCollect]=(bawa[x.tglCollect]||0)+x.totalCollect;}
+    if(x.tglCollect)trip[x.tglCollect+"|"+p.zona]=p.zona;
+  });
+  rows.forEach(r=>{
+    const p=U[r.unit]; if(!p)return;
+    if(kosong(r))p.kosong++; else {p.isi++;p.omset+=total(r);}
+    const n=+r.totalCollect||0;
+    if(n){p.collect+=n;bawa[r.tglCollect]=(bawa[r.tglCollect]||0)+n;}
+    if(r.tglCollect){
+      trip[r.tglCollect+"|"+p.zona]=p.zona;
+      const h=beda(r.tgl,r.tglCollect);
+      if(!kosong(r)&&h>=0){p.rupiahHari+=total(r)*h;p.lag+=h;p.lagN++;}
+    }
+  });
+  let transport=0; const tz={};
+  Object.keys(trip).forEach(k=>{const z=trip[k];transport+=biaya(z);tz[z]=(tz[z]||0)+biaya(z);});
+  let puncak=0,puncakTgl="";
+  Object.keys(bawa).forEach(t=>{if(bawa[t]>puncak){puncak=bawa[t];puncakTgl=t;}});
+
+  const arr=Object.keys(U).map(k=>({kode:k,...U[k]})).filter(x=>x.isi||x.collect||x.deposit);
+  const tOmset=arr.reduce((s,x)=>s+x.omset,0);
+  const tDeposit=arr.reduce((s,x)=>s+x.deposit,0);
+  const tCollect=arr.reduce((s,x)=>s+x.collect,0);
+  const tRupiahHari=arr.reduce((s,x)=>s+x.rupiahHari,0);
+
+  const aoaRingkas=[["Keterangan","Nilai"],
+    ["Bulan",bulan],["Omset cash",tOmset],["Deposit dan lainnya",tDeposit],["Ter-collect",tCollect],
+    ["Estimasi transport",transport],
+    ["Rasio transport persen",tOmset?+(transport/tOmset*100).toFixed(4):0],
+    ["Jumlah trip",Object.keys(trip).length],
+    ["Puncak uang dibawa sehari",puncak],["Tanggal puncak",puncakTgl],
+    ["Rupiah-hari mengendap",Math.round(tRupiahHari)]];
+  const aoaUnit=[["Unit","Nama","Entitas","Zona","Omset","Deposit","Ter-collect","Selisih",
+                  "Hari isi","Hari kosong","Kelengkapan persen","Aging rata-rata hari","Rupiah-hari"]];
+  const aoaKel=[["Jenis","Kelompok","Omset","Deposit","Ter-collect","Estimasi transport","Rasio transport persen"]];
+
+  let h='<div class="angka" style="margin-top:0;border-top:1px solid var(--rule)">'+
+    kartu("Omset cash",mio(tOmset))+
+    kartu("Deposit & lainnya",mio(tDeposit))+
+    kartu("Estimasi transport",rb(transport))+
+    kartu("Rasio transport",(tOmset?(transport/tOmset*100).toFixed(2):"0")+"%")+
+    kartu("Trip",Object.keys(trip).length)+'</div>';
+
+  h+='<div class="blok"><div class="judul"><h2>Eksposur kas</h2></div>'+
+     '<p class="ket">Puncak uang yang dibawa dalam satu hari <b class="num">'+mio(puncak)+'</b>'+
+     (puncakTgl?" pada "+tglTeks(puncakTgl):"")+'. '+
+     'Kas mengendap total <b class="num">'+new Intl.NumberFormat("id-ID").format(Math.round(tRupiahHari/1e6))+
+     ' juta rupiah-hari</b>, yaitu jumlah nilai dikali lama menunggu. '+
+     'Angka ini turun kalau collect lebih sering, walau nilainya sama.</p></div>';
+
+  h+=tabelKelompok("Per entitas",kelompok(arr,x=>x.ent),tz,aoaKel,"Entitas");
+  h+=tabelKelompok("Per zona",kelompok(arr,x=>x.zona),tz,aoaKel,"Zona");
+
+  h+='<div class="blok"><div class="judul"><h2>Per unit</h2>'+
+     '<button class="halus" onclick="salin(ANALISA.unit,this)">Salin</button></div><div class="gulir"><table>'+
+     '<thead><tr><th>Unit</th><th>Entitas</th><th>Zona</th><th class="kanan">Omset</th>'+
+     '<th class="kanan">Ter-collect</th><th class="kanan">Selisih</th><th class="kanan">Hari isi</th>'+
+     '<th class="kanan">Hari kosong</th><th class="kanan">Kelengkapan</th>'+
+     '<th class="kanan">Aging rata²</th></tr></thead><tbody>';
+  arr.sort((a,b)=>b.omset-a.omset).forEach(x=>{
+    const sel=x.collect-(x.omset+x.deposit), lengkap=x.isi+x.kosong?Math.round(x.isi/(x.isi+x.kosong)*100):0;
+    aoaUnit.push([x.kode,x.nama,x.ent,x.zona,x.omset,x.deposit,x.collect,sel,x.isi,x.kosong,lengkap,
+                  x.lagN?+(x.lag/x.lagN).toFixed(2):"",Math.round(x.rupiahHari)]);
+    h+='<tr><td><b>'+x.kode+'</b></td><td>'+x.ent+'</td><td>'+x.zona+'</td>'+
+       '<td class="kanan num">'+rp(x.omset)+'</td>'+
+       '<td class="kanan num">'+rp(x.deposit)+'</td>'+
+       '<td class="kanan num">'+rp(x.collect)+'</td>'+
+       '<td class="kanan num" style="color:'+(sel<0?"var(--stamp)":(sel>0?"var(--amber)":"var(--ink3)"))+'">'+
+         (sel>0?"+":"")+rp(sel)+'</td>'+
+       '<td class="kanan num">'+x.isi+'</td><td class="kanan num">'+x.kosong+'</td>'+
+       '<td class="kanan num" style="color:'+(lengkap<80?"var(--stamp)":"inherit")+'">'+lengkap+'%</td>'+
+       '<td class="kanan num">'+(x.lagN?(x.lag/x.lagN).toFixed(1):"—")+'</td></tr>';
+  });
+  h+='</tbody></table></div><p class="catatan">Kelengkapan di bawah 80 persen ditandai merah. '+
+     'Selisih adalah uang diterima dikurangi omset sistem; negatif berarti ada yang kurang.</p></div>';
+  h+='<div class="bar"><button class="aksi" onclick="unduhAnalisaXLSX()">Download Excel</button>'+
+     '<button class="halus" onclick="unduhAnalisaCSV()">Download CSV per unit</button>'+
+     '<button class="halus" onclick="salin(ANALISA.semua,this)">Salin semua</button>'+
+     '<span class="pesan" id="pesanAnalisa"></span></div>'+
+     '<p class="catatan">Angka disalin tanpa pemisah ribuan dan tanpa satuan, '+
+     'jadi langsung terbaca sebagai angka saat ditempel ke Excel atau Google Sheet.</p>';
+  box.innerHTML=h;
+  ANALISA={bulan:bulan,ringkas:aoaRingkas,unit:aoaUnit,
+           entitas:aoaKel.filter(r=>r[0]==="Jenis"||r[0]==="Entitas"),
+           zona:aoaKel.filter(r=>r[0]==="Jenis"||r[0]==="Zona"),
+           kelompok:aoaKel,
+           semua:[].concat([["RINGKASAN"]],aoaRingkas,[[]],[["PER KELOMPOK"]],aoaKel,
+                           [[]],[["PER UNIT"]],aoaUnit)};
+}
+function kartu(l,v){return '<div><div class="lbl">'+l+'</div><div class="val num">'+v+'</div></div>';}
+function kelompok(arr,fn){
+  const m={};
+  arr.forEach(x=>{const k=fn(x);m[k]=m[k]||{omset:0,collect:0,zona:new Set()};
+    m[k].omset+=x.omset;m[k].deposit=(m[k].deposit||0)+x.deposit;
+    m[k].collect+=x.collect;m[k].zona.add(x.zona);});
+  return m;
+}
+function tabelKelompok(judul,m,tz,aoa,jenis){
+  let h='<div class="blok"><div class="judul"><h2>'+judul+'</h2>'+
+    '<button class="halus" onclick="salin(ANALISA.'+(jenis==="Entitas"?"entitas":"zona")+',this)">Salin</button>'+
+    '</div><div class="gulir"><table>'+
+    '<thead><tr><th>Kelompok</th><th class="kanan">Omset</th><th class="kanan">Deposit</th>'+
+    '<th class="kanan">Ter-collect</th>'+
+    '<th class="kanan">Estimasi transport</th><th class="kanan">Rasio transport</th></tr></thead><tbody>';
+  Object.keys(m).sort((a,b)=>m[b].omset-m[a].omset).forEach(k=>{
+    let tr=0; m[k].zona.forEach(z=>{tr+=tz[z]||0;});
+    const rasio=m[k].omset?(tr/m[k].omset*100):0;
+    aoa.push([jenis,k,m[k].omset,m[k].deposit||0,m[k].collect,tr,+rasio.toFixed(4)]);
+    h+='<tr><td><b>'+k+'</b></td><td class="kanan num">'+rp(m[k].omset)+'</td>'+
+       '<td class="kanan num">'+rp(m[k].deposit||0)+'</td>'+
+       '<td class="kanan num">'+rp(m[k].collect)+'</td>'+
+       '<td class="kanan num">'+rp(tr)+'</td>'+
+       '<td class="kanan num" style="color:'+(rasio>2?"var(--stamp)":"inherit")+'">'+rasio.toFixed(2)+'%</td></tr>';
+  });
+  h+='</tbody></table></div><p class="catatan">Rasio transport di atas 2 persen ditandai merah. '+
+     'Transport dihitung dari zona yang disambangi, jadi zona yang dipakai beberapa kelompok muncul di keduanya.</p></div>';
+  return h;
+}
+
+function unduhAnalisaXLSX(){
+  if(!ANALISA)return;
+  unduhXLSX("ANALISA_"+ANALISA.bulan+".xlsx",[
+    {nama:"Ringkasan",aoa:ANALISA.ringkas},
+    {nama:"Per kelompok",aoa:ANALISA.kelompok},
+    {nama:"Per unit",aoa:ANALISA.unit}]);
+  const p=document.getElementById("pesanAnalisa");
+  if(p){p.className="pesan";p.textContent="Berkas Excel dibuat.";}
+}
+function unduhAnalisaCSV(){
+  if(!ANALISA)return;
+  unduhTeks("ANALISA_"+ANALISA.bulan+"_per_unit.csv",keCSV(ANALISA.unit),"text/csv");
+  const p=document.getElementById("pesanAnalisa");
+  if(p){p.className="pesan";p.textContent="Berkas CSV dibuat.";}
+}
+
+/* ================= RANGKA ================= */
+function pilihTab(n){
+  const map={posisi:"Posisi",omset:"Omset",collect:"Collect",export:"Export",analisa:"Analisa"};
+  Object.keys(map).forEach(x=>{
+    document.getElementById("pan"+map[x]).hidden=(x!==n);
+    document.getElementById("tab"+map[x]).setAttribute("aria-selected",x===n);});
+  if(n==="omset")gambarOmset();
+  if(n==="collect")gambarCollect();
+  if(n==="export"){isiPeriode();gambarExport();}
+  if(n==="analisa")gambarAnalisa();
+}
+function mulai(){
+  const adm=DATA.aku&&DATA.aku.peran==="ADMIN";
+  document.getElementById("tabAnalisa").hidden=!adm;
+  const A=acuan();
+  document.getElementById("oTgl").value=A;
+  document.getElementById("cCollect").value=A;
+  document.getElementById("eUnit").innerHTML=
+    unitUnik().map(u=>'<option value="'+u.kode+'">'+u.kode+" — "+u.nama+'</option>').join("");
+  gambarPosisi();
+}
+document.getElementById("tglAcuan").addEventListener("change",()=>{
+  document.getElementById("oTgl").value=acuan();
+  document.getElementById("cCollect").value=acuan();
+  gambarPosisi();
+  if(!document.getElementById("panOmset").hidden)gambarOmset();
+  if(!document.getElementById("panCollect").hidden)gambarCollect();
+});
+muat();
+</script>
+</body>
+</html>
