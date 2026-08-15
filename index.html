@@ -164,7 +164,7 @@ button.halus{background:#fff;color:var(--ink);font:inherit;font-size:13px;border
 </head>
 <body>
 
-<div id="gerbang" style="display:none;min-height:70vh;align-items:center;justify-content:center;
+<div id="gerbang" style="display:flex;min-height:70vh;align-items:center;justify-content:center;
   padding:40px 20px;text-align:center">
   <div style="max-width:420px">
     <h1 style="margin:0 0 6px">Cash Position Report</h1>
@@ -344,9 +344,16 @@ function tolak(pesan){
   gambarTombolMasuk();
 }
 function keluar(){ tolak("Sudah keluar."); }
-function gambarTombolMasuk(){
+function gambarTombolMasuk(coba){
   const kotak=document.getElementById("tombolMasuk");
-  if(!kotak||!window.google||!google.accounts||!google.accounts.id)return;
+  if(!kotak)return;
+  if(!(window.google&&google.accounts&&google.accounts.id)){
+    const n=(coba||0)+1;
+    if(n<40){ setTimeout(()=>gambarTombolMasuk(n),250); return; }
+    document.getElementById("pesanMasuk").textContent=
+      "Google Sign-In tidak bisa dimuat. Periksa sambungan internet atau pemblokir iklan.";
+    return;
+  }
   kotak.innerHTML="";
   google.accounts.id.initialize({client_id:CLIENT_ID,callback:terimaToken});
   google.accounts.id.renderButton(kotak,{theme:"outline",size:"large",text:"signin_with",
@@ -360,14 +367,26 @@ async function terimaToken(res){
 }
 
 async function muat(){
-  if(adaServer){
-    try{ DATA=await panggil("muatData");
+  const gerbang=document.getElementById("gerbang");
+  const app=document.getElementById("aplikasi");
+  if(modeAPI){
+    if(!ID_TOKEN){ tolak(""); return; }
+    try{
+      DATA=await panggil("muatData");
+      DATA.lain=DATA.lain||[]; DATA.jenis=DATA.jenis||[];
+      gerbang.style.display="none";
+      app.style.display="block";
       document.getElementById("mode").textContent="Terhubung ke Google Sheet.";
-      mulai(); return;
+      document.getElementById("siapa").textContent=
+        DATA.aku?(DATA.aku.nama||"")+" · "+(DATA.aku.peran||""):"";
+      mulai();
     }catch(e){
-      document.getElementById("mode").textContent="Tidak bisa membaca data. "+e.message;
+      tolak("Gagal masuk. "+e.message);
     }
+    return;
   }
+  gerbang.style.display="none";
+  app.style.display="block";
   DATA={master:MASTER_CONTOH,zona:ZONA_CONTOH,config:CONFIG_CONTOH,
         db:DB_CONTOH.map(r=>({tgl:r[0],unit:r[1],outlet:r[2],lunch:r[3],dinner:r[4],bfast:r[5],
                               tglCollect:r[6],tglSetor:r[7],totalCollect:r[8],catatan:r[9]||""})),
@@ -377,7 +396,7 @@ async function muat(){
     "Mode pratinjau dengan data contoh. Perubahan tidak tersimpan.";
   mulai();
 }
-window.addEventListener("load",()=>{ if(modeAPI&&!ID_TOKEN) setTimeout(gambarTombolMasuk,300); });
+window.addEventListener("load",()=>{ if(modeAPI&&!ID_TOKEN) gambarTombolMasuk(0); });
 
 const rp=n=>new Intl.NumberFormat("id-ID").format(Math.round(n||0));
 /* Isian angka ditampilkan dengan pemisah ribuan sambil diketik.
