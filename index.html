@@ -117,6 +117,14 @@ button.halus{background:#fff;color:var(--ink);font:inherit;font-size:13px;border
 .kartuUnit .dalam{padding:12px 14px}
 .mode{margin-top:26px;padding:10px 14px;border:1px dashed var(--rule);color:var(--ink2);
   font-size:12.5px;background:var(--field2)}
+.tombolRinci{font:inherit;font-size:11px;font-weight:600;letter-spacing:.04em;
+  background:transparent;color:var(--ink2);border:1px solid var(--rule);border-radius:2px;
+  padding:2px 8px;margin-left:8px;cursor:pointer;vertical-align:1px}
+.tombolRinci:hover{background:var(--field);border-color:var(--ink2)}
+.detail{display:none;padding:2px 0 14px}
+.detail.buka{display:block}
+.detail table{font-size:13px}
+.detail th{font-size:10px}
 .segmen{display:inline-flex;border:1px solid var(--rule);border-radius:2px;overflow:hidden}
 .segmen button{font:inherit;font-size:13px;font-weight:600;background:#fff;color:var(--ink2);
   border:none;padding:7px 16px;cursor:pointer;min-height:38px}
@@ -186,7 +194,7 @@ button.halus{background:#fff;color:var(--ink);font:inherit;font-size:13px;border
     </div>
     <div>
       <label for="tglAcuan">Tanggal acuan</label>
-      <input type="date" id="tglAcuan" value="2026-07-20">
+      <input type="date" id="tglAcuan">
     </div>
   </div>
   <nav role="tablist">
@@ -259,7 +267,7 @@ button.halus{background:#fff;color:var(--ink);font:inherit;font-size:13px;border
     <div class="form">
       <div class="kepala">
         <div><label for="eUnit">Unit</label><select id="eUnit" onchange="gambarExport()"></select></div>
-        <div><label for="eBulan">Bulan</label><input type="month" id="eBulan" value="2026-07" onchange="isiPeriode();gambarExport()"></div>
+        <div><label for="eBulan">Bulan</label><input type="month" id="eBulan" onchange="isiPeriode();gambarExport()"></div>
         <div><label for="ePeriode">Period di JV</label><input type="text" id="ePeriode" style="min-width:150px"></div>
         <div><label for="eKode">Kode JV</label><input type="text" id="eKode" style="min-width:90px" oninput="pratinjauJV()"></div>
         <div><label>Contoh nomor</label><div class="num" id="ePratinjau" style="font-weight:600;padding-top:7px">—</div></div>
@@ -272,7 +280,7 @@ button.halus{background:#fff;color:var(--ink);font:inherit;font-size:13px;border
     <div class="form">
       <div class="kepala">
         <div><label for="aBulan">Bulan</label>
-          <input type="month" id="aBulan" value="2026-07" onchange="gambarAnalisa()"></div>
+          <input type="month" id="aBulan" onchange="gambarAnalisa()"></div>
       </div>
       <div class="isi" id="isiAnalisa"></div>
     </div>
@@ -293,13 +301,13 @@ button.halus{background:#fff;color:var(--ink);font:inherit;font-size:13px;border
    rekening, kode akun, nama unit, atau nilai omset yang sebenarnya. */
 const MASTER_CONTOH=[
  ["UNIT-A","Unit contoh A","A1","Outlet A1","KANTOR","Kantor",1,"VHP_DESKTOP",
-  "0000-00001","BANK - 000-000-0001","0000-00002","0000-00003","VD"],
+  "0000-00001","BANK - 000-000-0001","0000-00002","0000-00003","VD",""],
  ["UNIT-B","Unit contoh B","B1","Outlet B1","JAKARTA","Titik B",1,"PLS",
-  "0000-00011","BANK - 000-000-0002","0000-00002","0000-00003","VD"],
+  "0000-00011","BANK - 000-000-0002","0000-00002","0000-00003","VD",""],
  ["UNIT-B","Unit contoh B","B2","Outlet B2","JAKARTA","Titik B",2,"PLS",
-  "0000-00011","BANK - 000-000-0002","0000-00002","0000-00003","VD"],
+  "0000-00011","BANK - 000-000-0002","0000-00002","0000-00003","VD",""],
  ["UNIT-C","Unit contoh C","C1","Outlet C1","BEKASI","Titik C",1,"VHP_CLOUD",
-  "0000-00021","BANK - 000-000-0003","0000-00002","0000-00003","TERAS"]];
+  "0000-00021","BANK - 000-000-0003","0000-00002","0000-00003","TERAS",""]];
 const ZONA_CONTOH=[["KANTOR",0,"Tiap hari"],["JAKARTA",145000,"Sen"],["BEKASI",265000,"Sel"],
                    ["TANGSEL",348000,"Rab"],["BOGOR",508000,"Kam"]];
 const CONFIG_CONTOH={SLA_HARI:7,ALERT_NILAI:30000000,BATAS_DATA:3,NAMA_PT:"NAMA PT"};
@@ -445,15 +453,33 @@ function unitUnik(){
   DATA.master.forEach(x=>{
     if(!m.has(x[0]))m.set(x[0],{kode:x[0],nama:x[1],zona:x[4],titik:x[5],varian:x[7],
       akunBank:x[8],namaBank:x[9],akunClr:x[10],akunOvr:x[11],
-      entitas:(x[12]||"VD").toUpperCase(),outlet:[]});
+      entitas:(x[12]||"VD").toUpperCase(),hariRotasi:String(x[13]||"").trim(),outlet:[]});
     m.get(x[0]).outlet.push({kode:x[2],nama:x[3],urut:+x[6]||1});});
   const a=[...m.values()]; a.forEach(u=>u.outlet.sort((p,q)=>p.urut-q.urut)); return a;
 }
+/* Nama hari disamakan ke tiga huruf tanpa tanda baca, jadi Jum, Jumat,
+   Jum'at, dan JUMAT sama-sama terbaca. */
+const normHari=v=>String(v||"").toLowerCase().replace(/[^a-z]/g,"").slice(0,3);
+function cocokHari(daftar,t){
+  const d=new Date(t+"T00:00:00"); if(isNaN(d))return false;
+  const h=normHari(HARI[d.getDay()]);
+  const isi=String(daftar||"");
+  if(normHari(isi)==="tia")return true;
+  return isi.split(",").map(normHari).indexOf(h)>=0;
+}
 function zonaHari(t){
   const d=new Date(t+"T00:00:00"); if(isNaN(d))return null;
-  const h=HARI[d.getDay()];
-  const z=DATA.zona.find(x=>x[2]===h);return z?z[0]:null;}
+  const z=DATA.zona.find(x=>x[0]!=="KANTOR"&&normHari(x[2])!=="tia"&&cocokHari(x[2],t));
+  return z?z[0]:null;}
 function biaya(z){const x=DATA.zona.find(a=>a[0]===z);return x?+x[1]||0:0;}
+/* Jadwal per unit. HARI_ROTASI di MASTER_UNIT menang atas zonanya.
+   Kalau kosong, unit ikut jadwal zonanya, dan zona KANTOR tiap hari. */
+function unitJadwal(u,t){
+  const sendiri=String(u.hariRotasi||"").trim();
+  if(sendiri)return cocokHari(sendiri,t);
+  if(u.zona==="KANTOR")return true;
+  return u.zona===zonaHari(t);
+}
 function rotasiBerikut(t){
   for(let i=1;i<=7;i++){const d=geser(t,i);if(d&&zonaHari(d))return{tgl:d,zona:zonaHari(d)};}
   return null;}
@@ -508,10 +534,10 @@ function gambarPosisi(){
   document.getElementById("aUmur").innerHTML=um?um+'<small>hari</small>':"—";
 
   const AL=+DATA.config.ALERT_NILAI||3e7;
-  const rot=R.filter(x=>zHari&&(x.u.zona===zHari||x.u.zona==="KANTOR"));
+  const rot=R.filter(x=>unitJadwal(x.u,A));
   const sisa=R.filter(x=>!rot.includes(x));
-  const besar=sisa.filter(x=>x.kas>=AL||(bes&&x.u.zona!==bes.zona&&x.kas>=AL));
-  const besok=bes?R.filter(x=>x.u.zona===bes.zona&&!besar.includes(x)&&!rot.includes(x)):[];
+  const besar=sisa.filter(x=>x.kas>=AL);
+  const besok=bes?R.filter(x=>unitJadwal(x.u,bes.tgl)&&!besar.includes(x)&&!rot.includes(x)):[];
 
   const zonaBiaya=arr=>{const z=[...new Set(arr.filter(x=>x.u.zona!=="KANTOR").map(x=>x.u.zona))];
     return z.reduce((s,q)=>s+biaya(q),0);};
@@ -519,7 +545,7 @@ function gambarPosisi(){
 
   let h="";
   h+=blok("Rotasi hari ini"+(zHari?" · "+zHari:""),
-        zHari?"Dijadwalkan untuk "+HARI[d.getDay()]:"Tidak ada rotasi di hari ini",
+        "Unit yang dijadwalkan pada "+HARI[d.getDay()]+", menurut MASTER_UNIT atau zonanya",
         bHari, rot, A);
   h+=blok("High value di luar rotasi",
         "Nilai di atas "+mio(AL)+", layak dipertimbangkan ikut diangkut hari ini",
@@ -557,11 +583,16 @@ function blok(judul,ket,biayaTotal,arr,A){
     } else rinci=x.terakhir?"Belum ada input sejak "+tglTeks(x.terakhir):"Belum ada input";
     if(x.kasLain>0) rinci+=' · termasuk '+mio(x.kasLain)+' '+
       x.lain.map(l=>namaJenis(l.jenis).toLowerCase()).filter((v,i,a)=>a.indexOf(v)===i).join(", ");
-    h+='<div class="baris"><div><span class="kode">'+x.u.kode+'</span>'+
+    const bisaBuka=x.hari.length>0;
+    h+='<div class="baris">'+
+       '<div><span class="kode">'+x.u.kode+'</span>'+
+       (bisaBuka?'<button class="tombolRinci" id="tb_'+x.u.kode+'" '+
+         'onclick="bukaDetail(\''+x.u.kode+'\')">rincian</button>':'')+
        '<span class="nama">'+x.u.nama+'</span><div class="rinci">'+rinci+'</div>'+strip+'</div>'+
        '<div><div class="nilai '+(tinggi?"tinggi":(x.kas?"":"kosong"))+'">'+mio(x.kas)+'</div>'+
        (x.onHand?'<div class="rinci" style="text-align:right">on hand '+mio(x.onHand)+'</div>':'')+
        (tag.length?'<div class="tanda">'+tag.join("")+'</div>':'')+'</div></div>';
+    if(bisaBuka) h+='<div class="detail" id="dt_'+x.u.kode+'">'+tabelDetail(x)+'</div>';
   });
   return h+'</div>';
 }
@@ -575,6 +606,48 @@ function salinPosisi(t){
               x.umur,x.hari[0]||"",x.hari[x.hari.length-1]||"",x.terakhir||""]);
   });
   salin(aoa,t);
+}
+
+function tabelDetail(x){
+  const A=acuan(), u=x.u;
+  const banyak=u.outlet.length>1;
+  let h='<div class="gulir"><table><thead><tr><th>Tanggal</th>'+
+        (banyak?'<th>Outlet</th>':'')+
+        '<th class="kanan">Lunch</th><th class="kanan">Dinner</th>'+
+        '<th class="kanan">Breakfast</th><th class="kanan">Total</th>'+
+        '<th class="kanan">Aging</th></tr></thead><tbody>';
+  let tl=0,td=0,tb=0,tt=0;
+  x.hari.forEach(t=>{
+    const rows=DATA.db.filter(r=>r.unit===u.kode&&r.tgl===t&&status(r)==="OUTSTANDING");
+    rows.forEach((r,i)=>{
+      const nm=(u.outlet.find(o=>o.kode===r.outlet)||{}).nama||r.outlet;
+      tl+=+r.lunch||0; td+=+r.dinner||0; tb+=+r.bfast||0; tt+=total(r);
+      h+='<tr><td>'+(i===0?tglTeks(t):'')+'</td>'+
+         (banyak?'<td>'+nm+'</td>':'')+
+         '<td class="kanan num">'+rp(r.lunch||0)+'</td>'+
+         '<td class="kanan num">'+rp(r.dinner||0)+'</td>'+
+         '<td class="kanan num">'+rp(r.bfast||0)+'</td>'+
+         '<td class="kanan num">'+rp(total(r))+'</td>'+
+         '<td class="kanan num">'+(i===0?beda(t,A)+' hari':'')+'</td></tr>';
+    });
+    (x.lain||[]).filter(l=>l.tgl===t).forEach(l=>{
+      h+='<tr><td></td>'+(banyak?'<td></td>':'')+
+         '<td colspan="3" class="rinci">'+namaJenis(l.jenis)+' · '+l.referensi+'</td>'+
+         '<td class="kanan num">'+rp(l.nilai)+'</td><td></td></tr>';
+      tt+=l.nilai;
+    });
+  });
+  h+='<tr style="font-weight:600;background:var(--field2)"><td>Total</td>'+
+     (banyak?'<td></td>':'')+
+     '<td class="kanan num">'+rp(tl)+'</td><td class="kanan num">'+rp(td)+'</td>'+
+     '<td class="kanan num">'+rp(tb)+'</td><td class="kanan num">'+rp(tt)+'</td><td></td></tr>';
+  return h+'</tbody></table></div>';
+}
+function bukaDetail(kode){
+  const d=document.getElementById("dt_"+kode), t=document.getElementById("tb_"+kode);
+  if(!d)return;
+  const buka=d.classList.toggle("buka");
+  if(t)t.textContent=buka?"tutup":"rincian";
 }
 
 /* ================= ISI OMSET ================= */
@@ -699,7 +772,7 @@ const unitEnt=tab=>unitUnik().filter(u=>u.entitas===ENT[tab]);
 function daftarCollect(){
   const A=acuan(),zHari=zonaHari(A);
   const R=unitEnt("collect").map(ringkas).filter(x=>x.hari.length);
-  const rot=R.filter(x=>zHari&&(x.u.zona===zHari||x.u.zona==="KANTOR"));
+  const rot=R.filter(x=>unitJadwal(x.u,A));
   const sisa=R.filter(x=>!rot.includes(x));
   const tambah=R.filter(x=>unitTambahan.includes(x.u.kode)&&!rot.includes(x)&&!sisa.includes(x));
   return [{judul:"Rotasi hari ini",arr:rot},
@@ -1259,6 +1332,9 @@ function pilihTab(n){
   if(n==="analisa")gambarAnalisa();
 }
 function mulai(){
+  const hari=hariIni();
+  ["tglAcuan"].forEach(id=>{const e=document.getElementById(id); if(e&&!e.value)e.value=hari;});
+  ["eBulan","aBulan"].forEach(id=>{const e=document.getElementById(id); if(e&&!e.value)e.value=hari.slice(0,7);});
   const adm=DATA.aku&&DATA.aku.peran==="ADMIN";
   document.getElementById("tabAnalisa").hidden=!adm;
   const A=acuan();
