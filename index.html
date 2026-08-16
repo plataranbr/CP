@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Cash Position Report — Plataran</title>
+<title>CPR</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -171,10 +171,8 @@ button.halus{background:#fff;color:var(--ink);font:inherit;font-size:13px;border
 <div id="gerbang" style="display:flex;min-height:70vh;align-items:center;justify-content:center;
   padding:40px 20px;text-align:center">
   <div style="max-width:420px">
-    <h1 style="margin:0 0 6px">Cash Position Report</h1>
-    <p style="color:var(--ink2);font-size:14px;margin:0 0 26px">
-      Masuk dengan akun Google yang terdaftar. Akun yang tidak ada di daftar akses
-      tidak bisa membuka data.</p>
+    <h1 style="margin:0 0 6px;letter-spacing:.04em">CPR</h1>
+    <p style="color:var(--ink2);font-size:14px;margin:0 0 26px">Masuk dengan akun yang terdaftar.</p>
     <div id="tombolMasuk" style="display:flex;justify-content:center"></div>
     <p id="pesanMasuk" style="color:var(--stamp);font-size:13.5px;margin-top:18px;min-height:20px"></p>
   </div>
@@ -198,6 +196,7 @@ button.halus{background:#fff;color:var(--ink);font:inherit;font-size:13px;border
     <button role="tab" id="tabOmset" aria-selected="false" onclick="pilihTab('omset')">Omset</button>
     <button role="tab" id="tabCollect" aria-selected="false" onclick="pilihTab('collect')">Total Collect</button>
     <button role="tab" id="tabExport" aria-selected="false" onclick="pilihTab('export')">Export</button>
+    <button role="tab" id="tabVerifikasi" aria-selected="false" hidden onclick="pilihTab('verifikasi')">Verifikasi</button>
     <button role="tab" id="tabAnalisa" aria-selected="false" hidden onclick="pilihTab('analisa')">Analisa</button>
   </nav>
 </header>
@@ -272,6 +271,22 @@ button.halus{background:#fff;color:var(--ink);font:inherit;font-size:13px;border
     </div>
   </section>
 
+  <section id="panVerifikasi" hidden>
+    <div class="form">
+      <div class="kepala">
+        <div><label for="vSaring">Tampilkan</label>
+          <select id="vSaring" onchange="gambarVerifikasi()">
+            <option value="belum">Belum diverifikasi</option>
+            <option value="sudah">Sudah diverifikasi</option>
+          </select></div>
+        <div style="flex:1"></div>
+        <button class="aksi" onclick="simpanVerifikasi()">Simpan Verifikasi</button>
+        <span class="pesan" id="pesanVerif"></span>
+      </div>
+      <div class="isi" id="isiVerifikasi"></div>
+    </div>
+  </section>
+
   <section id="panAnalisa" hidden>
     <div class="form">
       <div class="kepala">
@@ -289,6 +304,7 @@ button.halus{background:#fff;color:var(--ink);font:inherit;font-size:13px;border
   <div class="mode" id="mode"></div>
   <div class="bar" style="justify-content:flex-end">
     <span class="rinci" id="siapa"></span>
+    <button class="halus" onclick="muatUlang(this)">Muat Ulang Data</button>
     <button class="halus" onclick="keluar()">Keluar</button>
   </div>
 </div>
@@ -422,6 +438,12 @@ async function muat(){
 }
 window.addEventListener("load",()=>{ if(modeAPI&&!ID_TOKEN) gambarTombolMasuk(0); });
 
+/* Ditandai begitu ada yang mengetik di tab Omset atau Total Collect,
+   dan dibersihkan tiap kali tabelnya digambar ulang. Dipakai tombol
+   muat ulang untuk memperingatkan sebelum isian tertimpa. */
+let KOTOR=false;
+document.addEventListener("input",e=>{
+  if(e.target.closest&&e.target.closest("#isiOmset,#isiCollect"))KOTOR=true;});
 const rp=n=>new Intl.NumberFormat("id-ID").format(Math.round(n||0));
 /* Isian angka ditampilkan dengan pemisah ribuan sambil diketik.
    angkaDari membaca kembali nilainya sebagai bilangan. */
@@ -494,8 +516,7 @@ function biaya(z){const x=DATA.zona.find(a=>a[0]===z);return x?+x[1]||0:0;}
    Kalau MASTER_UNIT belum diisi, jatuh ke BIAYA_LOOP per zona. */
 function biayaKelompok(arr){
   const z={};
-  arr.forEach(x=>{const u=x.u||x; if(u.zona==="KANTOR")return;
-    (z[u.zona]=z[u.zona]||[]).push(u);});
+  arr.forEach(x=>{const u=x.u||x; (z[u.zona]=z[u.zona]||[]).push(u);});
   let t=0;
   Object.keys(z).forEach(zona=>{
     const us=z[zona];
@@ -616,14 +637,11 @@ function tabelBiaya(arr){
   Object.keys(z).sort().forEach(zona=>{
     const us=z[zona];
     let awal=zona;
-    if(zona==="KANTOR"){
-      us.forEach(u=>{h+=baris(awal,u.kode,"di sekitar kantor, tanpa ongkos","—");awal="";});
-      return;
-    }
     const adaAngka=us.some(u=>(u.biayaSendiri||0)>0);
     if(!adaAngka){
       const b=biaya(zona); total+=b;
-      h+=baris(awal,us.map(u=>u.kode).join(", "),"tarif satu putaran zona",rp(b));
+      h+=baris(awal,us.map(u=>u.kode).join(", "),
+               b?"tarif satu putaran zona":"tanpa ongkos tercatat",b?rp(b):"—");
       return;
     }
     let jangkar=us[0];
@@ -631,7 +649,8 @@ function tabelBiaya(arr){
     us.slice().sort((a,b)=>(b.biayaSendiri||0)-(a.biayaSendiri||0)).forEach(u=>{
       const jg=u===jangkar, b=jg?(u.biayaSendiri||0):(u.biayaTambah||0);
       total+=b;
-      h+=baris(awal,u.kode,jg?"jangkar rute, pulang pergi":"menyisip di rute "+zona,rp(b));
+      h+=baris(awal,u.kode,jg?"jangkar rute, pulang pergi":
+        (b?"menyisip di rute "+zona:"kasnya terkumpul di "+jangkar.kode),b?rp(b):"—");
       awal="";
     });
   });
@@ -771,6 +790,7 @@ function gambarOmset(){
   }));
   h+='</tbody></table></div>';
   document.getElementById("isiOmset").innerHTML=h;
+  KOTOR=false;
 }
 function isiBarisOmset(r,namaOutlet,tgl,kodeUnit){
   const id=r.tgl+"|"+r.unit+"|"+r.outlet;
@@ -808,10 +828,22 @@ async function simpanOmset(){
     .filter(b=>b.lunch!==""||b.dinner!==""||b.bfast!=="");
   if(!baris.length){p.className="pesan gagal";p.textContent="Belum ada yang diisi.";return;}
   try{
-    if(adaServer) await panggil("simpanOmset",baris);
-    baris.forEach(b=>{const i=DATA.db.findIndex(x=>x.unit===b.unit&&x.outlet===b.outlet&&x.tgl===b.tgl);
+    let hasil=null;
+    if(adaServer) hasil=await panggil("simpanOmset",baris);
+    /* Server melaporkan baris mana yang dilewati karena sudah dijemput.
+       Baris itu tidak ikut diperbarui di layar, sisanya tetap masuk. */
+    const tolak=new Set((hasil&&hasil.ditolak)||[]);
+    baris.filter(b=>!tolak.has(b.tgl+"|"+b.unit+"|"+b.outlet)).forEach(b=>{
+      const i=DATA.db.findIndex(x=>x.unit===b.unit&&x.outlet===b.outlet&&x.tgl===b.tgl);
       if(i>=0)Object.assign(DATA.db[i],b);else DATA.db.push({...b,tglCollect:"",tglSetor:"",totalCollect:0});});
-    p.className="pesan";p.textContent=(adaServer?"Tersimpan. ":"Tersimpan sementara. ")+baris.length+" baris.";
+    const masuk=baris.length-tolak.size;
+    if(tolak.size){
+      p.className="pesan gagal";
+      p.textContent=masuk+" baris tersimpan, "+tolak.size+" dilewati karena sudah dijemput.";
+    }else{
+      p.className="pesan";
+      p.textContent=(adaServer?"Tersimpan. ":"Tersimpan sementara. ")+masuk+" baris.";
+    }
     gambarOmset(); gambarPosisi();
   }catch(e){p.className="pesan gagal";p.textContent="Gagal menyimpan. "+e.message;}
 }
@@ -910,6 +942,7 @@ function gambarCollect(){
   h+=blokKoreksi();
   document.getElementById("isiCollect").innerHTML=h||'<div class="kosongan">Tidak ada unit yang menunggu.</div>';
   unitUnik().forEach(u=>hitungCollect(u.kode));
+  KOTOR=false;
 }
 function tambahUnit(){
   const v=document.getElementById("cTambah").value;
@@ -1032,7 +1065,8 @@ function gambarKoreksi(){
   const [unit,tglC]=k.split("|");
   const rows=DATA.db.filter(r=>r.unit===unit&&r.tglCollect===tglC&&(+r.totalCollect||0)>0);
   const lain=(DATA.lain||[]).filter(x=>x.unit===unit&&x.tglCollect===tglC);
-  const sudah=rows.some(r=>r.tglSetor)||lain.some(x=>x.tglSetor);
+  const verif=rows.some(r=>r.verifOleh)||lain.some(x=>x.verifOleh);
+  const sudah=verif||rows.some(r=>r.tglSetor)||lain.some(x=>x.tglSetor);
   const adm=DATA.aku&&DATA.aku.peran==="ADMIN";
   let h='<div class="gulir"><table><thead><tr><th>Tanggal omset</th>'+
         '<th class="kanan">Omset sistem</th><th class="kanan">Total collect</th></tr></thead><tbody>';
@@ -1061,8 +1095,9 @@ function gambarKoreksi(){
        (sudah&&!adm?" disabled":"")+'></div>'+
      '<button class="aksi" onclick="simpanKoreksi()"'+(sudah&&!adm?" disabled":"")+'>Simpan koreksi</button>'+
      '<span class="pesan" id="pesanKoreksi"></span></div>';
-  if(sudah&&!adm) h+='<p class="catatan">Sudah disetor. Hanya admin yang bisa memperbaiki.</p>';
-  else if(sudah) h+='<p class="catatan">Sudah disetor. Perubahan tercatat beserta alasannya.</p>';
+  const sebab=verif?"Sudah diverifikasi":"Sudah disetor";
+  if(sudah&&!adm) h+='<p class="catatan">'+sebab+'. Hanya admin yang bisa memperbaiki.</p>';
+  else if(sudah) h+='<p class="catatan">'+sebab+'. Perubahan tercatat beserta alasannya.</p>';
   box.innerHTML=h;
 }
 async function simpanKoreksi(){
@@ -1201,6 +1236,10 @@ function gambarExport(){
        '<button class="halus" onclick="unduhReport(\''+kode+'\',\''+t+'\')">Report .xlsx</button></td></tr>';
   });
   h+='</tbody></table></div><div class="bar"><span class="pesan" id="pesanExport"></span></div>';
+  const belum=tgl.filter(t=>DATA.db.some(r=>r.unit===kode&&r.tglSetor===t&&!r.verifOleh));
+  if(belum.length)
+    h+='<p class="catatan" style="color:var(--stamp)">'+belum.length+
+       ' tanggal setor belum diverifikasi Income Auditor.</p>';
   document.getElementById("isiExport").innerHTML=h;
 }
 function pesanEx(teks,gagal){
@@ -1485,6 +1524,109 @@ function unduhXLSX(nama,daftar){
 }
 let ANALISA=null;
 
+/* ================= VERIFIKASI =================
+   IA mencentang collect yang sudah diperiksa terhadap berkas dari GC:
+   laporan kasir, bukti setor bank, dan penjelasan selisihnya. Layar ini
+   tidak meminta berkasnya, hanya mencatat bahwa pemeriksaan sudah
+   dilakukan, siapa yang melakukan, dan kapan.
+   ============================================================ */
+function peristiwaVerif(){
+  const m={};
+  DATA.db.filter(r=>r.tglCollect).forEach(r=>{
+    const k=r.unit+"|"+r.tglCollect;
+    m[k]=m[k]||{unit:r.unit,tglCollect:r.tglCollect,tglSetor:r.tglSetor||"",
+                sistem:0,terima:0,tgl:new Set(),catatan:"",
+                verifOleh:r.verifOleh||"",verifWaktu:r.verifWaktu||""};
+    m[k].sistem+=total(r); m[k].terima+=+r.totalCollect||0; m[k].tgl.add(r.tgl);
+    if(r.catatan&&!m[k].catatan)m[k].catatan=r.catatan;
+    if(r.verifOleh)m[k].verifOleh=r.verifOleh;
+    if(r.verifWaktu)m[k].verifWaktu=r.verifWaktu;
+  });
+  (DATA.lain||[]).filter(x=>x.tglCollect).forEach(x=>{
+    const k=x.unit+"|"+x.tglCollect;
+    m[k]=m[k]||{unit:x.unit,tglCollect:x.tglCollect,tglSetor:x.tglSetor||"",
+                sistem:0,terima:0,tgl:new Set(),catatan:"",
+                verifOleh:x.verifOleh||"",verifWaktu:x.verifWaktu||""};
+    m[k].sistem+=x.nilai; m[k].terima+=+x.totalCollect||0; m[k].lain=true;
+    if(x.verifOleh)m[k].verifOleh=x.verifOleh;
+  });
+  return Object.keys(m).map(k=>({kunci:k,...m[k]}))
+    .sort((a,b)=>a.tglCollect.localeCompare(b.tglCollect));
+}
+function gambarVerifikasi(){
+  const box=document.getElementById("isiVerifikasi");
+  if(!box)return;
+  const mode=(document.getElementById("vSaring")||{}).value||"belum";
+  const adm=DATA.aku&&DATA.aku.peran==="ADMIN";
+  const A=acuan();
+  const AMB=+DATA.config.AMBANG_SELISIH||0;
+  const BV=+DATA.config.BATAS_VERIF_HARI||3;
+  const BS=+DATA.config.BATAS_SETOR_HARI||1;
+  let p=peristiwaVerif().filter(x=>mode==="sudah"?x.verifOleh:!x.verifOleh);
+  if(mode==="sudah")p=p.reverse().slice(0,60);
+  if(!p.length){
+    box.innerHTML='<div class="kosongan">'+
+      (mode==="sudah"?"Belum ada yang diverifikasi.":"Tidak ada yang menunggu verifikasi.")+'</div>';
+    return;
+  }
+  let h='<div class="gulir"><table class="stack"><thead><tr>'+
+    (mode==="sudah"?'':'<th style="width:40px">Ya</th>')+
+    '<th>Unit</th><th>Jemput</th><th>Setor</th><th class="kanan">Omset sistem</th>'+
+    '<th class="kanan">Diterima GC</th><th class="kanan">Selisih</th>'+
+    (mode==="sudah"?'<th>Diverifikasi</th>':'<th>Status</th>')+'</tr></thead><tbody>';
+  p.forEach(x=>{
+    const sel=x.terima-x.sistem;
+    const tunggu=beda(x.tglCollect,A);
+    const jeda=x.tglSetor?beda(x.tglCollect,x.tglSetor):null;
+    const besar=AMB&&Math.abs(sel)>AMB;
+    const kunci=besar&&!adm;
+    const tanda=[];
+    if(besar)tanda.push('<span class="tag n">selisih besar</span>');
+    if(tunggu>BV)tanda.push('<span class="tag u">menunggu '+tunggu+' hari</span>');
+    if(jeda!==null&&jeda>BS)tanda.push('<span class="tag u">setor H+'+jeda+'</span>');
+    if(!x.tglSetor)tanda.push('<span class="tag d">belum disetor</span>');
+    h+='<tr data-k="'+x.kunci+'">'+
+      (mode==="sudah"?'':'<td class="tengah" data-l="Verifikasi"><input type="checkbox" data-v="'+x.kunci+'"'+
+        (kunci?" disabled":"")+'></td>')+
+      '<td data-l="Unit"><b>'+x.unit+'</b></td>'+
+      '<td data-l="Jemput">'+tglTeks(x.tglCollect)+'</td>'+
+      '<td data-l="Setor">'+(x.tglSetor?tglTeks(x.tglSetor):"—")+'</td>'+
+      '<td class="kanan num" data-l="Omset sistem">'+rp(x.sistem)+'</td>'+
+      '<td class="kanan num" data-l="Diterima GC">'+rp(x.terima)+'</td>'+
+      '<td class="kanan num" data-l="Selisih" style="color:'+
+        (sel<0?"var(--stamp)":(sel>0?"var(--amber)":"var(--ink3)"))+'">'+
+        (sel>0?"+":"")+rp(sel)+'</td>'+
+      '<td data-l="Status">'+(mode==="sudah"
+        ? '<span class="rinci">'+x.verifOleh+(x.verifWaktu?" · "+tglTeks(x.verifWaktu):"")+'</span>'
+        : (tanda.join(" ")||'<span class="rinci">sesuai</span>')+
+          (kunci?'<div class="rinci">perlu dicentang admin</div>':''))+'</td></tr>';
+  });
+  h+='</tbody></table></div>';
+  if(mode!=="sudah")
+    h+='<p class="catatan">Centang berarti berkas dari GC sudah diperiksa. '+
+       'Setelah tercentang, nilainya hanya bisa diubah admin.</p>';
+  box.innerHTML=h;
+}
+async function simpanVerifikasi(){
+  const p=document.getElementById("pesanVerif");
+  const pilih=[...document.querySelectorAll("#isiVerifikasi [data-v]")]
+    .filter(c=>c.checked).map(c=>{const [unit,tglCollect]=c.dataset.v.split("|");
+      return {unit,tglCollect};});
+  if(!pilih.length){p.className="pesan gagal";p.textContent="Belum ada yang dicentang.";return;}
+  try{
+    if(adaServer) await panggil("verifikasi",pilih);
+    const cap=(DATA.aku&&DATA.aku.nama)||"", kini=hariIni();
+    pilih.forEach(x=>{
+      DATA.db.filter(r=>r.unit===x.unit&&r.tglCollect===x.tglCollect)
+        .forEach(r=>{r.verifOleh=cap;r.verifWaktu=kini;});
+      (DATA.lain||[]).filter(r=>r.unit===x.unit&&r.tglCollect===x.tglCollect)
+        .forEach(r=>{r.verifOleh=cap;r.verifWaktu=kini;});
+    });
+    p.className="pesan";p.textContent=pilih.length+" collect diverifikasi.";
+    gambarVerifikasi();
+  }catch(e){p.className="pesan gagal";p.textContent="Gagal. "+e.message;}
+}
+
 /* ================= ANALISA ================= */
 function gambarAnalisa(){
   const bulan=document.getElementById("aBulan").value;
@@ -1716,15 +1858,47 @@ function unduhAnalisaCSV(){
   if(p){p.className="pesan";p.textContent="Berkas CSV dibuat.";}
 }
 
+/* Menarik data terbaru tanpa memuat ulang halaman, supaya perubahan
+   dari perangkat lain ikut terlihat. Isian yang belum disimpan akan
+   tertimpa, jadi ditanyakan dulu. */
+async function muatUlang(btn){
+  if(KOTOR&&!confirm("Ada isian yang belum disimpan dan akan hilang. Lanjutkan?"))return;
+  if(Object.keys(LAIN_BARU).some(k=>(LAIN_BARU[k]||[]).length)&&
+     !confirm("Ada penerimaan di luar omset yang belum disimpan. Lanjutkan?"))return;
+  const semula=btn.textContent;
+  btn.textContent="Memuat…"; btn.disabled=true;
+  try{
+    if(adaServer){
+      const baru=await panggil("muatData");
+      DATA=baru;
+      DATA.lain=DATA.lain||[]; DATA.jenis=DATA.jenis||[]; DATA.koreksi=DATA.koreksi||[];
+    }
+    LAIN_BARU={}; unitTambahan=[]; KOTOR=false;
+    gambarPosisi();
+    const tampil=id=>!document.getElementById(id).hidden;
+    if(tampil("panOmset"))gambarOmset();
+    if(tampil("panCollect"))gambarCollect();
+    if(tampil("panExport"))gambarExport();
+    if(tampil("panVerifikasi"))gambarVerifikasi();
+    if(tampil("panAnalisa"))gambarAnalisa();
+    btn.textContent="Data terbaru";
+  }catch(e){
+    btn.textContent="Gagal memuat";
+  }
+  setTimeout(()=>{btn.textContent=semula;btn.disabled=false;},2200);
+}
+
 /* ================= RANGKA ================= */
 function pilihTab(n){
-  const map={posisi:"Posisi",omset:"Omset",collect:"Collect",export:"Export",analisa:"Analisa"};
+  const map={posisi:"Posisi",omset:"Omset",collect:"Collect",export:"Export",
+             verifikasi:"Verifikasi",analisa:"Analisa"};
   Object.keys(map).forEach(x=>{
     document.getElementById("pan"+map[x]).hidden=(x!==n);
     document.getElementById("tab"+map[x]).setAttribute("aria-selected",x===n);});
   if(n==="omset")gambarOmset();
   if(n==="collect")gambarCollect();
   if(n==="export"){isiPeriode();gambarExport();}
+  if(n==="verifikasi")gambarVerifikasi();
   if(n==="analisa")gambarAnalisa();
 }
 function mulai(){
@@ -1732,7 +1906,9 @@ function mulai(){
   ["tglAcuan"].forEach(id=>{const e=document.getElementById(id); if(e&&!e.value)e.value=hari;});
   ["eBulan","aBulan"].forEach(id=>{const e=document.getElementById(id); if(e&&!e.value)e.value=hari.slice(0,7);});
   const adm=DATA.aku&&DATA.aku.peran==="ADMIN";
+  const ia=DATA.aku&&DATA.aku.peran==="IA";
   document.getElementById("tabAnalisa").hidden=!adm;
+  document.getElementById("tabVerifikasi").hidden=!(adm||ia);
   const A=acuan();
   document.getElementById("oTgl").value=A;
   document.getElementById("cCollect").value=A;
