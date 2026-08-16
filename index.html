@@ -554,6 +554,10 @@ async function muat(){
       document.getElementById("siapa").textContent=
         DATA.aku?(DATA.aku.nama||"")+" · "+(DATA.aku.peran||""):"";
       mulai();
+      /* Layar kosong tanpa keterangan menyulitkan penelusuran. Kalau tidak
+         ada unit yang terbaca, sebabnya hampir selalu penyaringan akses
+         atau kolom AKTIF, bukan kegagalan sambungan. */
+      diagnosa();
     }catch(e){
       tolak("Gagal masuk. "+e.message,true);
     }
@@ -577,11 +581,14 @@ window.addEventListener("load",()=>{ if(modeAPI&&!ID_TOKEN) gambarTombolMasuk(0)
 let KOTOR=false;
 document.addEventListener("input",e=>{
   if(e.target.closest&&e.target.closest("#isiOmset,#isiCollect"))KOTOR=true;});
-const rp=n=>new Intl.NumberFormat("id-ID").format(Math.round(n||0));
+/* Pemisah ribuan memakai koma, disamakan dengan format akuntansi di JV
+   dan Report. angkaDari membuang semua tanda baca saat membaca kembali,
+   jadi pemisah apa pun tetap terbaca sebagai angka. */
+const rp=n=>new Intl.NumberFormat("en-US").format(Math.round(n||0));
 /* Isian angka ditampilkan dengan pemisah ribuan sambil diketik.
    angkaDari membaca kembali nilainya sebagai bilangan. */
 const fmtRibu=v=>{const d=String(v==null?"":v).replace(/\D/g,"");
-  return d?new Intl.NumberFormat("id-ID").format(+d):"";};
+  return d?new Intl.NumberFormat("en-US").format(+d):"";};
 const angkaDari=v=>{const d=String(v==null?"":v).replace(/\D/g,"");return d?+d:0;};
 function rapikan(inp){
   const pos=inp.selectionStart==null?String(inp.value).length:inp.selectionStart;
@@ -592,9 +599,9 @@ function rapikan(inp){
   try{inp.setSelectionRange(i,i);}catch(e){}
 }
 const penuh=()=>{const e=document.getElementById("angkaPenuh");return e&&e.checked;};
-const mio=n=>(n||0)===0?"—":penuh()?new Intl.NumberFormat("id-ID").format(Math.round(n))
-  :new Intl.NumberFormat("id-ID",{minimumFractionDigits:1,maximumFractionDigits:1}).format(n/1e6)+" Mio";
-const rb=n=>(n||0)===0?"—":new Intl.NumberFormat("id-ID").format(Math.round(n/1000))+" rb";
+const mio=n=>(n||0)===0?"—":penuh()?new Intl.NumberFormat("en-US").format(Math.round(n))
+  :new Intl.NumberFormat("en-US",{minimumFractionDigits:1,maximumFractionDigits:1}).format(n/1e6)+" Mio";
+const rb=n=>(n||0)===0?"—":new Intl.NumberFormat("en-US").format(Math.round(n/1000))+" rb";
 const HARI=["Min","Sen","Sel","Rab","Kam","Jum","Sab"];
 const BULAN=["Jan","Feb","Mar","Apr","Mei","Jun","Jul","Agu","Sep","Okt","Nov","Des"];
 const tglTeks=s=>{if(!s)return"—";const d=new Date(s+"T00:00:00");return d.getDate()+" "+BULAN[d.getMonth()];};
@@ -2040,7 +2047,7 @@ function gambarAnalisa(){
   h+='<div class="blok"><div class="judul"><h2>Eksposur Kas</h2></div>'+
      '<p class="ket">Puncak sehari <b class="num">'+mio(puncak)+'</b>'+
      (puncakTgl?" pada "+tglTeks(puncakTgl):"")+' · mengendap <b class="num">'+
-     new Intl.NumberFormat("id-ID").format(Math.round(tRupiahHari/1e6))+
+     new Intl.NumberFormat("en-US").format(Math.round(tRupiahHari/1e6))+
      '</b> juta rupiah-hari</p></div>';
 
   h+=blokStatusVerif(bulan);
@@ -2305,6 +2312,22 @@ async function muatUlang(btn){
 }
 
 /* ================= RANGKA ================= */
+function diagnosa(){
+  const wadah=document.getElementById("daftar");
+  if(!wadah)return;
+  const nUnit=(DATA.master||[]).length, nDb=(DATA.db||[]).length;
+  if(nUnit&&nDb)return;
+  const peran=(DATA.aku&&DATA.aku.peran)||"tidak terbaca";
+  let sebab;
+  if(!nUnit)
+    sebab="Tidak ada unit yang terbaca. Periksa daftar akses: kolom PERAN untuk akun ini "+
+          "terbaca <b>"+peran+"</b>, dan kolom UNIT membatasi unit mana yang boleh dilihat. "+
+          "Kosongkan kolom UNIT untuk melihat semuanya. Periksa juga kolom AKTIF di daftar unit.";
+  else
+    sebab="Ada "+nUnit+" baris unit, tetapi tidak ada satu pun baris omset yang terbaca.";
+  wadah.innerHTML='<div class="blok"><div class="judul"><h2>Data tidak terbaca</h2></div>'+
+    '<p class="ket">'+sebab+'</p></div>';
+}
 function pilihTab(n){
   const map={posisi:"Posisi",omset:"Omset",collect:"Collect",export:"Export",
              verifikasi:"Verifikasi",analisa:"Analisa"};
