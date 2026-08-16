@@ -581,18 +581,22 @@ function rotasiBerikut(t){
   for(let i=1;i<=7;i++){const d=geser(t,i);if(d&&zonaHari(d))return{tgl:d,zona:zonaHari(d)};}
   return null;}
 
+/* Tanggal jemput dan tanggal setor dibandingkan dengan tanda lebih besar,
+   bukan lebih besar sama dengan. Kejadian yang bertanggal hari ini sudah
+   terjadi, jadi collect yang baru disimpan langsung keluar dari daftar
+   outstanding dan kartunya hilang dari tab Total Collect. */
 function status(r){const A=acuan();
   if(r.tgl>=A)return"";
   if(kosong(r))return"BELUM DIISI";
-  if(!r.tglCollect||r.tglCollect>=A)return"OUTSTANDING";
-  if(!r.tglSetor||r.tglSetor>=A)return"ON HAND";
+  if(!r.tglCollect||r.tglCollect>A)return"OUTSTANDING";
+  if(!r.tglSetor||r.tglSetor>A)return"ON HAND";
   return"DISETOR";}
 
 function statusLain(x){
   const A=acuan();
   if(x.tgl>=A)return"";
-  if(!x.tglCollect||x.tglCollect>=A)return"OUTSTANDING";
-  if(!x.tglSetor||x.tglSetor>=A)return"ON HAND";
+  if(!x.tglCollect||x.tglCollect>A)return"OUTSTANDING";
+  if(!x.tglSetor||x.tglSetor>A)return"ON HAND";
   return"DISETOR";
 }
 const lainUnit=(kode,st)=>(DATA.lain||[]).filter(x=>x.unit===kode&&(!st||statusLain(x)===st));
@@ -949,11 +953,16 @@ function gambarCollect(){
         const j=DATA.db.filter(r=>r.unit===x.u.kode&&r.tgl===t&&status(r)==="OUTSTANDING")
                        .reduce((s,r)=>s+total(r),0);
         if(j===0)return;
+        /* Kalau nilai hitungan fisik sudah pernah tersimpan, itu yang
+           ditampilkan, bukan angka sistem. */
+        const tersimpan=DATA.db.filter(r=>r.unit===x.u.kode&&r.tgl===t)
+                               .reduce((s,r)=>s+(+r.totalCollect||0),0);
         h+='<tr><td><input type="checkbox" checked data-u="'+x.u.kode+'" data-t="'+t+'"></td>'+
            '<td>'+tglTeks(t)+' <span class="rinci">'+beda(t,A)+' hari</span></td>'+
            '<td class="kanan num">'+rp(j)+'</td>'+
            '<td class="kanan"><input class="num" inputmode="numeric" data-terima="'+x.u.kode+"|"+t+
-           '" value="'+fmtRibu(j)+'" oninput="rapikan(this);hitungCollect(\''+x.u.kode+'\')"></td></tr>';
+           '" value="'+fmtRibu(tersimpan>0?tersimpan:j)+
+           '" oninput="rapikan(this);hitungCollect(\''+x.u.kode+'\')"></td></tr>';
       });
       x.lain.forEach(l=>{
         h+='<tr><td><input type="checkbox" checked data-ul="'+x.u.kode+'" data-id="'+l.id+'"></td>'+
@@ -974,6 +983,7 @@ function gambarCollect(){
     });
     h+='</div>';
   });
+  h+=blokBelumSetor();
   h+=blokKoreksi();
   document.getElementById("isiCollect").innerHTML=h||'<div class="kosongan">Tidak ada unit yang menunggu.</div>';
   unitUnik().forEach(u=>hitungCollect(u.kode));
@@ -1010,7 +1020,7 @@ async function simpanCollect(kode){
   if(!c){p.className="pesan gagal";p.textContent="Isi tanggal collect.";return;}
   if(s&&s<c){p.className="pesan gagal";p.textContent="Tanggal setor sebelum tanggal collect.";return;}
   const cat=(document.querySelector('[data-catatan="'+kode+'"]')||{}).value||"";
-  const pilih=[];
+  let pilih=[];
   document.querySelectorAll('[data-u="'+kode+'"]').forEach(cb=>{
     if(cb.checked){const t=cb.dataset.t;
       const i=document.querySelector('[data-terima="'+kode+"|"+t+'"]');
@@ -1023,8 +1033,11 @@ async function simpanCollect(kode){
   if(!pilih.length&&!pilihLain.length&&!lainBaru.length){
     p.className="pesan gagal";p.textContent="Pilih minimal satu baris.";return;}
   try{
-    if(adaServer)await panggil("simpanCollect",{unit:kode,tglCollect:c,tglSetor:s,catatan:cat,
+    let hasil=null;
+    if(adaServer)hasil=await panggil("simpanCollect",{unit:kode,tglCollect:c,tglSetor:s,catatan:cat,
                                                baris:pilih,lain:pilihLain,lainBaru:lainBaru});
+    const tolak=new Set((hasil&&hasil.ditolak)||[]);
+    pilih=pilih.filter(x=>!tolak.has(x.tgl));
     pilih.forEach(x=>{const rs=DATA.db.filter(r=>r.unit===kode&&r.tgl===x.tgl);
       rs.forEach((r,i)=>{r.tglCollect=c;r.tglSetor=s||"";r.totalCollect=i===0?x.terima:0;
                          r.catatan=i===0?cat:"";});});
@@ -1034,7 +1047,13 @@ async function simpanCollect(kode){
       jenis:b.jenis,nilai:b.nilai,referensi:b.referensi,
       tglCollect:c,tglSetor:s||"",totalCollect:b.nilai,catatan:cat}));
     LAIN_BARU[kode]=[];
-    p.className="pesan";p.textContent=adaServer?"Tersimpan.":"Tersimpan sementara.";
+    if(tolak.size){
+      p.className="pesan gagal";
+      p.textContent=tolak.size+" tanggal dilewati karena sudah pernah dijemput. "+
+        "Perbaiki lewat Koreksi Collect.";
+    }else{
+      p.className="pesan";p.textContent=adaServer?"Tersimpan.":"Tersimpan sementara.";
+    }
     gambarCollect();gambarPosisi();
   }catch(e){p.className="pesan gagal";p.textContent="Gagal. "+e.message;}
 }
@@ -1062,6 +1081,71 @@ function blokLain(kode){
        '<input type="text" id="lr_'+kode+'" placeholder="nama acara, tanggal acara, total dan porsi tunai"></div>'+
      '<button class="halus" onclick="tambahLain(\''+kode+'\')">Tambah</button></div></div>';
   return h;
+}
+
+/* ---------- collect yang belum disetor ke bank ----------
+   Mengisi tanggal setor bukan koreksi, melainkan langkah normal yang
+   memang terjadi belakangan, jadi tidak perlu alasan dan tidak masuk
+   sheet KOREKSI. */
+function belumSetor(){
+  const ent=new Set(unitEnt("collect").map(u=>u.kode));
+  const m={};
+  DATA.db.filter(r=>r.tglCollect&&!r.tglSetor&&ent.has(r.unit)).forEach(r=>{
+    const k=r.unit+"|"+r.tglCollect;
+    m[k]=m[k]||{unit:r.unit,tglCollect:r.tglCollect,nilai:0};
+    m[k].nilai+=+r.totalCollect||0;});
+  (DATA.lain||[]).filter(x=>x.tglCollect&&!x.tglSetor&&ent.has(x.unit)).forEach(x=>{
+    const k=x.unit+"|"+x.tglCollect;
+    m[k]=m[k]||{unit:x.unit,tglCollect:x.tglCollect,nilai:0};
+    m[k].nilai+=+x.totalCollect||0;});
+  return Object.keys(m).map(k=>({kunci:k,...m[k]}))
+    .sort((a,b)=>a.tglCollect.localeCompare(b.tglCollect)||a.unit.localeCompare(b.unit));
+}
+function blokBelumSetor(){
+  const A=acuan(), BS=+DATA.config.BATAS_SETOR_HARI||1;
+  const p=belumSetor();
+  let h='<div class="blok"><div class="judul"><h2>Belum Disetor</h2>';
+  if(p.length) h+='<span class="biaya">'+p.length+' collect · <b>'+
+    mio(p.reduce((s,x)=>s+x.nilai,0))+'</b></span>';
+  h+='</div>';
+  if(!p.length) return h+'<div class="kosongan">Semua collect sudah punya tanggal setor.</div></div>';
+  h+='<div class="gulir"><table class="stack"><thead><tr><th>Unit</th><th>Jemput</th>'+
+     '<th class="kanan">Nilai</th><th>Umur</th><th>Tanggal setor</th></tr></thead><tbody>';
+  p.forEach(x=>{
+    const umur=beda(x.tglCollect,A);
+    const tanda=umur<=0?'<span class="rinci">hari ini</span>'
+      :'<span class="tag '+(umur>BS?(umur>BS+2?"n":"u"):"d")+'">H+'+umur+'</span>';
+    h+='<tr><td data-l="Unit"><b>'+x.unit+'</b></td>'+
+       '<td data-l="Jemput">'+tglTeks(x.tglCollect)+'</td>'+
+       '<td class="kanan num" data-l="Nilai">'+rp(x.nilai)+'</td>'+
+       '<td data-l="Umur">'+tanda+'</td>'+
+       '<td data-l="Tanggal setor"><input type="date" data-setor="'+x.kunci+
+         '" min="'+x.tglCollect+'"></td></tr>';
+  });
+  h+='</tbody></table></div><div class="bar">'+
+     '<button class="aksi" onclick="simpanSetor()">Simpan Tanggal Setor</button>'+
+     '<span class="pesan" id="pesanSetor"></span></div></div>';
+  return h;
+}
+async function simpanSetor(){
+  const p=document.getElementById("pesanSetor");
+  const isi=[...document.querySelectorAll("#isiCollect [data-setor]")]
+    .filter(i=>i.value).map(i=>{const [unit,tglCollect]=i.dataset.setor.split("|");
+      return {unit,tglCollect,tglSetor:i.value};});
+  if(!isi.length){p.className="pesan gagal";p.textContent="Belum ada tanggal yang diisi.";return;}
+  const salah=isi.find(x=>x.tglSetor<x.tglCollect);
+  if(salah){p.className="pesan gagal";
+    p.textContent="Tanggal setor "+salah.unit+" mendahului tanggal jemput.";return;}
+  try{
+    if(adaServer) await panggil("simpanSetor",isi);
+    isi.forEach(x=>{
+      DATA.db.filter(r=>r.unit===x.unit&&r.tglCollect===x.tglCollect)
+        .forEach(r=>r.tglSetor=x.tglSetor);
+      (DATA.lain||[]).filter(r=>r.unit===x.unit&&r.tglCollect===x.tglCollect)
+        .forEach(r=>r.tglSetor=x.tglSetor);});
+    p.className="pesan";p.textContent=isi.length+" tanggal setor tersimpan.";
+    gambarCollect();gambarPosisi();
+  }catch(e){p.className="pesan gagal";p.textContent="Gagal. "+e.message;}
 }
 
 /* ---------- koreksi collect yang sudah tersimpan ---------- */
@@ -1650,7 +1734,7 @@ function gambarVerifikasi(){
     const jSis=arr.reduce((s,x)=>s+x.omset+x.deposit,0);
     const jTer=arr.reduce((s,x)=>s+x.terima+x.terimaLain,0);
     h+='<div class="blok" style="margin-top:20px"><div class="judul">'+
-       '<h2>Setor '+(t==="(belum disetor)"?t:tglTeks(t))+' · '+arr.length+' unit</h2>'+
+       '<h2>'+(t==="(belum disetor)"?"Belum Disetor":"Setor "+tglTeks(t))+' · '+arr.length+' unit</h2>'+
        '<span class="biaya">sistem <b class="num">'+rp(jSis)+'</b> · diterima <b class="num">'+
        rp(jTer)+'</b></span></div>';
     h+='<div class="gulir"><table class="stack"><thead><tr>'+
@@ -1663,16 +1747,19 @@ function gambarVerifikasi(){
       const sis=x.omset+x.deposit, ter=x.terima+x.terimaLain, sel=ter-sis;
       const tunggu=beda(x.tglCollect,A);
       const jeda=x.tglSetor?beda(x.tglCollect,x.tglSetor):null;
-      const besar=AMB&&Math.abs(sel)>AMB, kunci=besar&&!adm;
+      const besar=AMB&&Math.abs(sel)>AMB;
+      const belumSetorIni=!x.tglSetor;
+      const kunci=(besar&&!adm)||belumSetorIni;
       const tanda=[];
       if(besar)tanda.push('<span class="tag n">selisih besar</span>');
       if(tunggu>BV)tanda.push('<span class="tag u">menunggu '+tunggu+' hari</span>');
       if(jeda!==null&&jeda>BS)tanda.push('<span class="tag u">setor H+'+jeda+'</span>');
-      if(!x.tglSetor)tanda.push('<span class="tag d">belum disetor</span>');
+      if(belumSetorIni)tanda.push('<span class="tag d">menunggu tanggal setor</span>');
       const id=x.kunci.replace(/[^A-Za-z0-9]/g,"_");
       h+='<tr>'+
-        (mode==="sudah"?'':'<td class="tengah" data-l="Verifikasi"><input type="checkbox" data-v="'+
-          x.kunci+'"'+(kunci?" disabled":"")+'></td>')+
+        (mode==="sudah"?'':'<td class="tengah" data-l="Verifikasi">'+
+          (belumSetorIni?'<span class="rinci" title="menunggu tanggal setor">&#128274;</span>'
+            :'<input type="checkbox" data-v="'+x.kunci+'"'+(kunci?" disabled":"")+'>')+'</td>')+
         '<td data-l="Unit"><b>'+x.unit+'</b>'+
           '<button class="tombolRinci" id="tb_'+id+'" onclick="bukaVerif(\''+id+'\')">rincian</button></td>'+
         '<td data-l="Jemput">'+tglTeks(x.tglCollect)+'</td>'+
@@ -1685,7 +1772,7 @@ function gambarVerifikasi(){
         '<td data-l="Status">'+(mode==="sudah"
           ? '<span class="rinci">'+x.verifOleh+(x.verifWaktu?" · "+tglTeks(x.verifWaktu):"")+'</span>'
           : (tanda.join(" ")||'<span class="rinci">sesuai</span>')+
-            (kunci?'<div class="rinci">perlu dicentang admin</div>':''))+'</td></tr>';
+            (kunci&&!belumSetorIni?'<div class="rinci">perlu dicentang admin</div>':''))+'</td></tr>';
       h+='<tr class="detail" id="dt_'+id+'"><td colspan="8" style="padding:0">'+
          rincianVerif(x,peta[x.unit])+'</td></tr>';
     });
