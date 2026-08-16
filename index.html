@@ -260,7 +260,6 @@ tr.detail.buka{display:table-row}
     <div class="form">
       <div class="kepala">
         <div><label for="cCollect">Tanggal collect</label><input type="date" id="cCollect"></div>
-        <div><label for="cSetor">Tanggal setor</label><input type="date" id="cSetor"></div>
         <div><label for="cTambah">Tambah Unit</label>
           <select id="cTambah" onchange="tambahUnit()"></select></div>
         <div><label>Entitas</label>
@@ -612,7 +611,8 @@ function ringkas(u){
   const kasLain=lOut.reduce((s,x)=>s+x.nilai,0);
   const tglLain=lOut.map(x=>x.tgl);
   const semuaTgl=[...new Set(hari.concat(tglLain))].sort();
-  return{u,kas:out.reduce((s,r)=>s+total(r),0)+kasLain,
+  const hariOn=[...new Set(oh.map(r=>r.tgl))].sort();
+  return{u,hariOn,lainOn:lOh,kas:out.reduce((s,r)=>s+total(r),0)+kasLain,
     kasOmset:out.reduce((s,r)=>s+total(r),0),kasLain,lain:lOut,
     onHand:oh.reduce((s,r)=>s+(+r.totalCollect||0),0)+lOh.reduce((s,x)=>s+x.totalCollect,0),
     hari:semuaTgl,
@@ -925,13 +925,19 @@ function setEnt(tab,e){
 const unitEnt=tab=>unitUnik().filter(u=>u.entitas===ENT[tab]);
 function daftarCollect(){
   const A=acuan(),zHari=zonaHari(A);
-  const R=unitEnt("collect").map(ringkas).filter(x=>x.hari.length);
-  const rot=R.filter(x=>unitJadwal(x.u,A));
-  const sisa=R.filter(x=>!rot.includes(x));
-  const tambah=R.filter(x=>unitTambahan.includes(x.u.kode)&&!rot.includes(x)&&!sisa.includes(x));
+  const R=unitEnt("collect").map(ringkas).filter(x=>x.hari.length||x.hariOn.length);
+  /* Unit yang sudah dijemput seluruhnya dan tinggal menunggu tanggal setor
+     dipisah ke kelompoknya sendiri, supaya tidak tercampur dengan yang
+     uangnya masih di unit. */
+  const setor=R.filter(x=>!x.hari.length&&x.hariOn.length);
+  const S=R.filter(x=>x.hari.length);
+  const rot=S.filter(x=>unitJadwal(x.u,A));
+  const sisa=S.filter(x=>!rot.includes(x));
+  const tambah=S.filter(x=>unitTambahan.includes(x.u.kode)&&!rot.includes(x)&&!sisa.includes(x));
   return [{judul:"Rotasi Hari Ini",arr:rot},
           {judul:"Belum Ter-collect",arr:sisa},
-          {judul:"Unit Tambahan",arr:tambah}];
+          {judul:"Unit Tambahan",arr:tambah},
+          {judul:"Menunggu Tanggal Setor",arr:setor}];
 }
 function gambarCollect(){
   const A=acuan();
@@ -940,7 +946,7 @@ function gambarCollect(){
     unitEnt("collect").map(u=>'<option value="'+u.kode+'">'+u.kode+'</option>').join("");
   let h="";
   daftarCollect().forEach(g=>{
-    if(!g.arr.length&&g.judul.startsWith("Unit tambahan"))return;
+    if(!g.arr.length&&(g.judul.startsWith("Unit Tambahan")||g.judul.startsWith("Menunggu")))return;
     h+='<div class="blok"><div class="judul"><h2>'+g.judul+'</h2></div>';
     if(!g.arr.length){h+='<div class="kosongan">Tidak ada.</div></div>';return;}
     g.arr.forEach(x=>{
@@ -948,7 +954,8 @@ function gambarCollect(){
          '<span class="nama">'+x.u.nama+'</span></div>'+
          '<div class="num" style="font-weight:600">'+mio(x.kas)+'</div></div><div class="dalam">';
       h+='<div class="gulir"><table><thead><tr><th style="width:40px"></th><th>Tanggal omset</th>'+
-         '<th class="kanan">Omset sistem</th><th class="kanan">Total collect</th></tr></thead><tbody>';
+         '<th class="kanan">Omset sistem</th><th class="kanan">Total collect</th>'+
+         '<th>Tanggal setor</th></tr></thead><tbody>';
       x.hari.forEach(t=>{
         const j=DATA.db.filter(r=>r.unit===x.u.kode&&r.tgl===t&&status(r)==="OUTSTANDING")
                        .reduce((s,r)=>s+total(r),0);
@@ -962,14 +969,33 @@ function gambarCollect(){
            '<td class="kanan num">'+rp(j)+'</td>'+
            '<td class="kanan"><input class="num" inputmode="numeric" data-terima="'+x.u.kode+"|"+t+
            '" value="'+fmtRibu(tersimpan>0?tersimpan:j)+
-           '" oninput="rapikan(this);hitungCollect(\''+x.u.kode+'\')"></td></tr>';
+           '" oninput="rapikan(this);hitungCollect(\''+x.u.kode+'\')"></td>'+
+           '<td><input type="date" data-setorbaru="'+x.u.kode+"|"+t+'" value="'+hariIni()+'"></td></tr>';
+      });
+      /* Hari yang sudah dijemput tetapi belum disetor. Nilainya terkunci,
+         yang bisa diisi hanya tanggal setornya. */
+      const sudahTampil={};
+      x.hariOn.forEach(t=>{
+        const rows=DATA.db.filter(r=>r.unit===x.u.kode&&r.tgl===t&&status(r)==="ON HAND");
+        if(!rows.length)return;
+        const sis=rows.reduce((s,r)=>s+total(r),0);
+        const ter=rows.reduce((s,r)=>s+(+r.totalCollect||0),0);
+        const tc=rows[0].tglCollect;
+        const pertama=!sudahTampil[tc]; sudahTampil[tc]=1;
+        h+='<tr class="terkunci"><td></td>'+
+           '<td>'+tglTeks(t)+' <span class="rinci">jemput '+tglTeks(tc)+'</span></td>'+
+           '<td class="kanan num">'+rp(sis)+'</td>'+
+           '<td class="kanan num">'+rp(ter)+'</td>'+
+           '<td>'+(pertama?'<input type="date" data-setor="'+x.u.kode+"|"+tc+
+             '" min="'+tc+'" value="'+hariIni()+'">':'')+'</td></tr>';
       });
       x.lain.forEach(l=>{
         h+='<tr><td><input type="checkbox" checked data-ul="'+x.u.kode+'" data-id="'+l.id+'"></td>'+
            '<td>'+tglTeks(l.tgl)+' <span class="rinci">'+namaJenis(l.jenis)+' · '+l.referensi+'</span></td>'+
            '<td class="kanan num">'+rp(l.nilai)+'</td>'+
            '<td class="kanan"><input class="num" inputmode="numeric" data-terimal="'+l.id+
-           '" value="'+fmtRibu(l.nilai)+'" oninput="rapikan(this);hitungCollect(\''+x.u.kode+'\')"></td></tr>';
+           '" value="'+fmtRibu(l.nilai)+'" oninput="rapikan(this);hitungCollect(\''+x.u.kode+'\')"></td>'+
+           '<td></td></tr>';
       });
       h+='</tbody></table></div>';
       h+=blokLain(x.u.kode);
@@ -983,7 +1009,6 @@ function gambarCollect(){
     });
     h+='</div>';
   });
-  h+=blokBelumSetor();
   h+=blokKoreksi();
   document.getElementById("isiCollect").innerHTML=h||'<div class="kosongan">Tidak ada unit yang menunggu.</div>';
   unitUnik().forEach(u=>hitungCollect(u.kode));
@@ -1015,38 +1040,65 @@ function hitungCollect(kode){
   b.style.color=s<0?"var(--stamp)":(s>0?"var(--amber)":"var(--ok)");
 }
 async function simpanCollect(kode){
-  const c=document.getElementById("cCollect").value,s=document.getElementById("cSetor").value;
+  const c=document.getElementById("cCollect").value;
   const p=document.getElementById("pesan_"+kode);
-  if(!c){p.className="pesan gagal";p.textContent="Isi tanggal collect.";return;}
-  if(s&&s<c){p.className="pesan gagal";p.textContent="Tanggal setor sebelum tanggal collect.";return;}
   const cat=(document.querySelector('[data-catatan="'+kode+'"]')||{}).value||"";
+
+  /* Baris yang baru dijemput. Tanggal setornya menempel di barisnya
+     sendiri, jadi satu penjemputan boleh disetor pada hari berbeda. */
   let pilih=[];
   document.querySelectorAll('[data-u="'+kode+'"]').forEach(cb=>{
     if(cb.checked){const t=cb.dataset.t;
       const i=document.querySelector('[data-terima="'+kode+"|"+t+'"]');
-      pilih.push({tgl:t,terima:angkaDari(i.value)});}});
+      const d=document.querySelector('[data-setorbaru="'+kode+"|"+t+'"]');
+      pilih.push({tgl:t,terima:angkaDari(i.value),tglSetor:(d&&d.value)||""});}});
   const pilihLain=[];
   document.querySelectorAll('[data-ul="'+kode+'"]').forEach(cb=>{
     if(cb.checked){const i=document.querySelector('[data-terimal="'+cb.dataset.id+'"]');
       pilihLain.push({id:cb.dataset.id,terima:angkaDari(i.value)});}});
   const lainBaru=LAIN_BARU[kode]||[];
-  if(!pilih.length&&!pilihLain.length&&!lainBaru.length){
-    p.className="pesan gagal";p.textContent="Pilih minimal satu baris.";return;}
+
+  /* Baris yang sudah dijemput dan tinggal menunggu tanggal setor. */
+  const susulan=[...document.querySelectorAll('#isiCollect [data-setor^="'+kode+'|"]')]
+    .filter(i=>i.value).map(i=>{const [unit,tglCollect]=i.dataset.setor.split("|");
+      return {unit,tglCollect,tglSetor:i.value};});
+
+  if(!pilih.length&&!pilihLain.length&&!lainBaru.length&&!susulan.length){
+    p.className="pesan gagal";p.textContent="Tidak ada yang bisa disimpan.";return;}
+
+  const salah=pilih.find(x=>x.tglSetor&&c&&x.tglSetor<c);
+  if(salah){p.className="pesan gagal";
+    p.textContent="Tanggal setor "+tglTeks(salah.tgl)+" mendahului tanggal jemput.";return;}
+
   try{
-    let hasil=null;
-    if(adaServer)hasil=await panggil("simpanCollect",{unit:kode,tglCollect:c,tglSetor:s,catatan:cat,
-                                               baris:pilih,lain:pilihLain,lainBaru:lainBaru});
-    const tolak=new Set((hasil&&hasil.ditolak)||[]);
-    pilih=pilih.filter(x=>!tolak.has(x.tgl));
-    pilih.forEach(x=>{const rs=DATA.db.filter(r=>r.unit===kode&&r.tgl===x.tgl);
-      rs.forEach((r,i)=>{r.tglCollect=c;r.tglSetor=s||"";r.totalCollect=i===0?x.terima:0;
-                         r.catatan=i===0?cat:"";});});
-    pilihLain.forEach(x=>{const l=DATA.lain.find(y=>y.id===x.id);
-      if(l){l.tglCollect=c;l.tglSetor=s||"";l.totalCollect=x.terima;l.catatan=cat;}});
-    lainBaru.forEach((b,i)=>DATA.lain.push({id:"TL-LOKAL-"+Date.now()+"-"+i,tgl:c,unit:kode,
-      jenis:b.jenis,nilai:b.nilai,referensi:b.referensi,
-      tglCollect:c,tglSetor:s||"",totalCollect:b.nilai,catatan:cat}));
-    LAIN_BARU[kode]=[];
+    let tolak=new Set();
+    if(pilih.length||pilihLain.length||lainBaru.length){
+      if(!c){p.className="pesan gagal";p.textContent="Isi tanggal collect.";return;}
+      let hasil=null;
+      if(adaServer)hasil=await panggil("simpanCollect",{unit:kode,tglCollect:c,
+        tglSetor:(pilih[0]&&pilih[0].tglSetor)||"",catatan:cat,
+        baris:pilih,lain:pilihLain,lainBaru:lainBaru});
+      tolak=new Set((hasil&&hasil.ditolak)||[]);
+      pilih.filter(x=>!tolak.has(x.tgl)).forEach(x=>{
+        const rs=DATA.db.filter(r=>r.unit===kode&&r.tgl===x.tgl);
+        rs.forEach((r,i)=>{r.tglCollect=c;r.tglSetor=x.tglSetor||"";
+          r.totalCollect=i===0?x.terima:0;r.catatan=i===0?cat:"";});});
+      pilihLain.forEach(x=>{const l=DATA.lain.find(y=>y.id===x.id);
+        if(l){l.tglCollect=c;l.tglSetor=(pilih[0]&&pilih[0].tglSetor)||"";
+              l.totalCollect=x.terima;l.catatan=cat;}});
+      lainBaru.forEach((b,i)=>DATA.lain.push({id:"TL-LOKAL-"+Date.now()+"-"+i,tgl:c,unit:kode,
+        jenis:b.jenis,nilai:b.nilai,referensi:b.referensi,tglCollect:c,
+        tglSetor:(pilih[0]&&pilih[0].tglSetor)||"",totalCollect:b.nilai,catatan:cat}));
+      LAIN_BARU[kode]=[];
+    }
+    if(susulan.length){
+      if(adaServer) await panggil("simpanSetor",susulan);
+      susulan.forEach(x=>{
+        DATA.db.filter(r=>r.unit===x.unit&&r.tglCollect===x.tglCollect)
+          .forEach(r=>r.tglSetor=x.tglSetor);
+        (DATA.lain||[]).filter(r=>r.unit===x.unit&&r.tglCollect===x.tglCollect)
+          .forEach(r=>r.tglSetor=x.tglSetor);});
+    }
     if(tolak.size){
       p.className="pesan gagal";
       p.textContent=tolak.size+" tanggal dilewati karena sudah pernah dijemput. "+
@@ -1081,71 +1133,6 @@ function blokLain(kode){
        '<input type="text" id="lr_'+kode+'" placeholder="nama acara, tanggal acara, total dan porsi tunai"></div>'+
      '<button class="halus" onclick="tambahLain(\''+kode+'\')">Tambah</button></div></div>';
   return h;
-}
-
-/* ---------- collect yang belum disetor ke bank ----------
-   Mengisi tanggal setor bukan koreksi, melainkan langkah normal yang
-   memang terjadi belakangan, jadi tidak perlu alasan dan tidak masuk
-   sheet KOREKSI. */
-function belumSetor(){
-  const ent=new Set(unitEnt("collect").map(u=>u.kode));
-  const m={};
-  DATA.db.filter(r=>r.tglCollect&&!r.tglSetor&&ent.has(r.unit)).forEach(r=>{
-    const k=r.unit+"|"+r.tglCollect;
-    m[k]=m[k]||{unit:r.unit,tglCollect:r.tglCollect,nilai:0};
-    m[k].nilai+=+r.totalCollect||0;});
-  (DATA.lain||[]).filter(x=>x.tglCollect&&!x.tglSetor&&ent.has(x.unit)).forEach(x=>{
-    const k=x.unit+"|"+x.tglCollect;
-    m[k]=m[k]||{unit:x.unit,tglCollect:x.tglCollect,nilai:0};
-    m[k].nilai+=+x.totalCollect||0;});
-  return Object.keys(m).map(k=>({kunci:k,...m[k]}))
-    .sort((a,b)=>a.tglCollect.localeCompare(b.tglCollect)||a.unit.localeCompare(b.unit));
-}
-function blokBelumSetor(){
-  const A=acuan(), BS=+DATA.config.BATAS_SETOR_HARI||1;
-  const p=belumSetor();
-  let h='<div class="blok"><div class="judul"><h2>Belum Disetor</h2>';
-  if(p.length) h+='<span class="biaya">'+p.length+' collect · <b>'+
-    mio(p.reduce((s,x)=>s+x.nilai,0))+'</b></span>';
-  h+='</div>';
-  if(!p.length) return h+'<div class="kosongan">Semua collect sudah punya tanggal setor.</div></div>';
-  h+='<div class="gulir"><table class="stack"><thead><tr><th>Unit</th><th>Jemput</th>'+
-     '<th class="kanan">Nilai</th><th>Umur</th><th>Tanggal setor</th></tr></thead><tbody>';
-  p.forEach(x=>{
-    const umur=beda(x.tglCollect,A);
-    const tanda=umur<=0?'<span class="rinci">hari ini</span>'
-      :'<span class="tag '+(umur>BS?(umur>BS+2?"n":"u"):"d")+'">H+'+umur+'</span>';
-    h+='<tr><td data-l="Unit"><b>'+x.unit+'</b></td>'+
-       '<td data-l="Jemput">'+tglTeks(x.tglCollect)+'</td>'+
-       '<td class="kanan num" data-l="Nilai">'+rp(x.nilai)+'</td>'+
-       '<td data-l="Umur">'+tanda+'</td>'+
-       '<td data-l="Tanggal setor"><input type="date" data-setor="'+x.kunci+
-         '" min="'+x.tglCollect+'"></td></tr>';
-  });
-  h+='</tbody></table></div><div class="bar">'+
-     '<button class="aksi" onclick="simpanSetor()">Simpan Tanggal Setor</button>'+
-     '<span class="pesan" id="pesanSetor"></span></div></div>';
-  return h;
-}
-async function simpanSetor(){
-  const p=document.getElementById("pesanSetor");
-  const isi=[...document.querySelectorAll("#isiCollect [data-setor]")]
-    .filter(i=>i.value).map(i=>{const [unit,tglCollect]=i.dataset.setor.split("|");
-      return {unit,tglCollect,tglSetor:i.value};});
-  if(!isi.length){p.className="pesan gagal";p.textContent="Belum ada tanggal yang diisi.";return;}
-  const salah=isi.find(x=>x.tglSetor<x.tglCollect);
-  if(salah){p.className="pesan gagal";
-    p.textContent="Tanggal setor "+salah.unit+" mendahului tanggal jemput.";return;}
-  try{
-    if(adaServer) await panggil("simpanSetor",isi);
-    isi.forEach(x=>{
-      DATA.db.filter(r=>r.unit===x.unit&&r.tglCollect===x.tglCollect)
-        .forEach(r=>r.tglSetor=x.tglSetor);
-      (DATA.lain||[]).filter(r=>r.unit===x.unit&&r.tglCollect===x.tglCollect)
-        .forEach(r=>r.tglSetor=x.tglSetor);});
-    p.className="pesan";p.textContent=isi.length+" tanggal setor tersimpan.";
-    gambarCollect();gambarPosisi();
-  }catch(e){p.className="pesan gagal";p.textContent="Gagal. "+e.message;}
 }
 
 /* ---------- koreksi collect yang sudah tersimpan ---------- */
