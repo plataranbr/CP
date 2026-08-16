@@ -337,12 +337,20 @@ async function panggil(fn,arg){
   if(!res.ok) throw new Error("Jaringan bermasalah ("+res.status+").");
   const j=await res.json();
   if(!j.ok){
-    if(j.galat==="AKSES_DITOLAK"){ tolak("Akun Anda tidak terdaftar, atau sesi sudah berakhir."); }
+    if(j.galat==="AKSES_DITOLAK"){ tolak("Akun Anda tidak terdaftar, atau sesi sudah berakhir.",true); }
     throw new Error(j.galat||"Gagal.");
   }
   return j.hasil;
 }
-function tolak(pesan){
+/* Sekali sudah pernah memberi izin, akun tunggal akan dipilih sendiri
+   tanpa klik. Setelah keluar atau ditolak, pilihan otomatis dimatikan
+   supaya tidak berputar masuk-keluar. */
+let OTOMATIS=true, GSI_INIT=false, GSI_MENUNGGU=false;
+function tolak(pesan,matikanOtomatis){
+  if(matikanOtomatis){
+    OTOMATIS=false;
+    try{ google.accounts.id.disableAutoSelect(); }catch(e){}
+  }
   ID_TOKEN=""; sessionStorage.removeItem("cpr_token");
   document.getElementById("aplikasi").style.display="none";
   const g=document.getElementById("gerbang");
@@ -350,21 +358,31 @@ function tolak(pesan){
   document.getElementById("pesanMasuk").textContent=pesan||"";
   gambarTombolMasuk();
 }
-function keluar(){ tolak("Sudah keluar."); }
+function keluar(){ tolak("Sudah keluar.",true); }
 function gambarTombolMasuk(coba){
+  const n=coba||0;
+  /* Halaman memanggil ini dua kali, saat skrip dibaca dan saat load.
+     Penjaga ini mencegah dua putaran tunggu berjalan bersamaan, yang
+     bisa membuat tombolnya digambar lalu terhapus lagi. */
+  if(n===0){ if(GSI_MENUNGGU) return; GSI_MENUNGGU=true; }
   const kotak=document.getElementById("tombolMasuk");
-  if(!kotak)return;
+  if(!kotak){ GSI_MENUNGGU=false; return; }
   if(!(window.google&&google.accounts&&google.accounts.id)){
-    const n=(coba||0)+1;
-    if(n<40){ setTimeout(()=>gambarTombolMasuk(n),250); return; }
+    if(n<40){ setTimeout(()=>gambarTombolMasuk(n+1),250); return; }
+    GSI_MENUNGGU=false;
     document.getElementById("pesanMasuk").textContent=
-      "Google Sign-In tidak bisa dimuat. Periksa sambungan internet atau pemblokir iklan.";
+      "Layanan masuk tidak bisa dimuat. Periksa sambungan internet atau pemblokir iklan.";
     return;
   }
+  GSI_MENUNGGU=false;
   kotak.innerHTML="";
-  google.accounts.id.initialize({client_id:CLIENT_ID,callback:terimaToken});
-  google.accounts.id.renderButton(kotak,{theme:"outline",size:"large",text:"signin_with",
+  if(!GSI_INIT){
+    google.accounts.id.initialize({client_id:CLIENT_ID,callback:terimaToken,auto_select:OTOMATIS});
+    GSI_INIT=true;
+  }
+  google.accounts.id.renderButton(kotak,{theme:"outline",size:"large",text:"continue_with",
     locale:"id",width:280});
+  if(OTOMATIS){ try{ google.accounts.id.prompt(); }catch(e){} }
 }
 async function terimaToken(res){
   ID_TOKEN=res.credential;
@@ -388,7 +406,7 @@ async function muat(){
         DATA.aku?(DATA.aku.nama||"")+" · "+(DATA.aku.peran||""):"";
       mulai();
     }catch(e){
-      tolak("Gagal masuk. "+e.message);
+      tolak("Gagal masuk. "+e.message,true);
     }
     return;
   }
@@ -574,13 +592,57 @@ function gambarPosisi(){
 
   let h="";
   h+=blok("Rotasi Hari Ini"+(zHari?" · "+zHari:""),"",bHari,rot,A);
-  h+=blok("Terlewat dari Rotasi Sebelumnya",
+  h+=blok("Belum Ter-collect",
         "Jadwal jemput sudah lewat, kas masih tercatat di unit",bLewat,lewat,A);
   h+=blok("High Value di Luar Rotasi","Di atas "+mio(AL),bBesar,besar,A);
   if(bes) h+=blok("Rotasi Berikutnya · "+bes.zona+" · "+tglTeks(bes.tgl),"",bBesok,besok,A);
-  h+='<div class="blok"><div class="judul"><h2>Estimasi Transport Hari Ini</h2>'+
-     '<span class="biaya"><b>'+rb(bHari+bLewat+bBesar)+'</b></span></div></div>';
+  h+='<div class="blok"><div class="judul"><h2>Estimasi Transport Hari Ini'+
+     '<button class="tombolRinci" id="tb_biaya" onclick="bukaBiaya()">rincian</button></h2>'+
+     '<span class="biaya"><b>'+rb(bHari+bLewat+bBesar)+'</b></span></div>'+
+     '<div class="detail" id="dt_biaya">'+tabelBiaya(rot.concat(lewat,besar))+'</div></div>';
   document.getElementById("daftar").innerHTML=h;
+}
+/* Rincian dari mana angka transport datang: per zona satu unit jadi
+   jangkar rute dengan biaya pulang pergi, sisanya biaya menyisip. */
+function tabelBiaya(arr){
+  if(!arr.length) return '<div class="kosongan">Tidak ada unit yang dijemput hari ini.</div>';
+  const z={};
+  arr.forEach(x=>{(z[x.u.zona]=z[x.u.zona]||[]).push(x.u);});
+  let h='<div class="gulir"><table><thead><tr><th>Zona</th><th>Unit</th><th>Dasar hitung</th>'+
+        '<th class="kanan">Biaya</th></tr></thead><tbody>';
+  let total=0;
+  const baris=(zona,unit,dasar,nilai)=>'<tr><td>'+zona+'</td><td><b>'+unit+'</b></td>'+
+    '<td class="rinci">'+dasar+'</td><td class="kanan num">'+nilai+'</td></tr>';
+  Object.keys(z).sort().forEach(zona=>{
+    const us=z[zona];
+    let awal=zona;
+    if(zona==="KANTOR"){
+      us.forEach(u=>{h+=baris(awal,u.kode,"di sekitar kantor, tanpa ongkos","—");awal="";});
+      return;
+    }
+    const adaAngka=us.some(u=>(u.biayaSendiri||0)>0);
+    if(!adaAngka){
+      const b=biaya(zona); total+=b;
+      h+=baris(awal,us.map(u=>u.kode).join(", "),"tarif satu putaran zona",rp(b));
+      return;
+    }
+    let jangkar=us[0];
+    us.forEach(u=>{if((u.biayaSendiri||0)>(jangkar.biayaSendiri||0))jangkar=u;});
+    us.slice().sort((a,b)=>(b.biayaSendiri||0)-(a.biayaSendiri||0)).forEach(u=>{
+      const jg=u===jangkar, b=jg?(u.biayaSendiri||0):(u.biayaTambah||0);
+      total+=b;
+      h+=baris(awal,u.kode,jg?"jangkar rute, pulang pergi":"menyisip di rute "+zona,rp(b));
+      awal="";
+    });
+  });
+  h+='<tr style="font-weight:600;background:var(--field2)"><td colspan="3">Total</td>'+
+     '<td class="kanan num">'+rp(total)+'</td></tr>';
+  return h+'</tbody></table></div>';
+}
+function bukaBiaya(){
+  const d=document.getElementById("dt_biaya"), t=document.getElementById("tb_biaya");
+  if(!d)return;
+  if(t)t.textContent=d.classList.toggle("buka")?"tutup":"rincian";
 }
 function blok(judul,ket,biayaTotal,arr,A){
   let h='<div class="blok"><div class="judul"><h2>'+judul+'</h2>'+
@@ -1044,8 +1106,18 @@ const FMT_TGL_DESKTOP='dd\\-mm\\-yy';
 const FMT_TGL_CLOUD='mm/dd/yyyy';
 const FMT_TGL_BARIS='dd-mmm-yyyy';
 const FMT_TGL_SETOR='[$-C09]dd-mmm-yy;@';
-const FMT_TGL_PANJANG='[$-F800]dddd", "mmmm dd", "yyyy';
+/* [$-F800] menyerahkan bentuknya ke setelan tanggal panjang sistem, jadi
+   isinya berubah antar komputer dan teks sisipan diabaikan. Bentuknya
+   ditulis tegas supaya sama di mana pun berkas dibuka. */
+const FMT_TGL_PANJANG='[$-409]dd mmmm yyyy';
 const BIRU="FF1F4E78", KUNING="FFFFF2CC";
+/* Titik dua ditempel di awal kolom B lewat format angka, supaya semua
+   titik dua berdiri di satu garis lurus tanpa perlu kolom tambahan. */
+const PRE_TITIK='": "';
+/* Kode wilayah seperti [$-F800] harus tetap berada paling depan, jadi
+   awalan titik dua disisipkan sesudahnya, bukan sebelumnya. */
+const tempelTitik=z=>{const m=String(z).match(/^(\[[^\]]*\])([\s\S]*)$/);
+  return m?m[1]+PRE_TITIK+m[2]:PRE_TITIK+z;};
 const GARIS={top:{style:"thin"},left:{style:"thin"},bottom:{style:"thin"},right:{style:"thin"}};
 
 const KOL=i=>{let s="",n=i;do{s=String.fromCharCode(65+(n%26))+s;n=Math.floor(n/26)-1;}while(n>=0);return s;};
@@ -1305,8 +1377,13 @@ async function unduhReport(kode,t){
   /* Baris isian: label dan titik dua di kolom A, nilainya digabung
      dari kolom B sampai kolom terakhir supaya tidak terjepit. */
   const isian=(r,label,nilai,o)=>{
-    set("A"+r,label+" :",(o&&o.tebalLabel)?{b:1}:{});
-    set("B"+r,nilai,Object.assign({rata:"left"},(o&&o.gaya)||{}));
+    set("A"+r,label,(o&&o.tebalLabel)?{b:1}:{});
+    const gaya=Object.assign({rata:"left"},(o&&o.gaya)||{});
+    let isi=nilai;
+    if(gaya.z) gaya.z=tempelTitik(gaya.z);           /* angka dan tanggal */
+    else if(typeof nilai==="string") isi=": "+nilai;  /* teks */
+    else gaya.z=PRE_TITIK+"General";
+    set("B"+r,isi,gaya);
     ws.mergeCells("B"+r+":"+KOL(cAkhir)+r);
   };
   isian(rT+1,"Total Amount",{formula:KOL(cRem)+rT,result:totOmset},{tebalLabel:1,gaya:{z:FMT_RP,b:1}});
