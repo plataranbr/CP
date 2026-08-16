@@ -123,6 +123,7 @@ button.halus{background:#fff;color:var(--ink);font:inherit;font-size:13px;border
 .tombolRinci:hover{background:var(--field);border-color:var(--ink2)}
 .detail{display:none;padding:2px 0 14px}
 .detail.buka{display:block}
+tr.detail.buka{display:table-row}
 .detail table{font-size:13px}
 .detail th{font-size:10px}
 .segmen{display:inline-flex;border:1px solid var(--rule);border-radius:2px;overflow:hidden}
@@ -192,16 +193,30 @@ button.halus{background:#fff;color:var(--ink);font:inherit;font-size:13px;border
     </div>
   </div>
   <nav role="tablist">
+    <button role="tab" id="tabAnalisa" aria-selected="false" hidden onclick="pilihTab('analisa')">Summary</button>
     <button role="tab" id="tabPosisi" aria-selected="true" onclick="pilihTab('posisi')">Cash Position</button>
     <button role="tab" id="tabOmset" aria-selected="false" onclick="pilihTab('omset')">Omset</button>
     <button role="tab" id="tabCollect" aria-selected="false" onclick="pilihTab('collect')">Total Collect</button>
     <button role="tab" id="tabExport" aria-selected="false" onclick="pilihTab('export')">Export</button>
     <button role="tab" id="tabVerifikasi" aria-selected="false" hidden onclick="pilihTab('verifikasi')">Verifikasi</button>
-    <button role="tab" id="tabAnalisa" aria-selected="false" hidden onclick="pilihTab('analisa')">Analisa</button>
   </nav>
 </header>
 
 <div class="wrap">
+  <section id="panAnalisa" hidden>
+    <div class="form">
+      <div class="kepala">
+        <div><label for="aBulan">Bulan</label>
+          <input type="month" id="aBulan" onchange="gambarAnalisa()"></div>
+        <div><label for="kUnit">Koreksi unit</label>
+          <select id="kUnit" onchange="gambarKoreksiRiwayat()"></select></div>
+        <div><label for="kDari">Dari</label><input type="date" id="kDari" onchange="gambarKoreksiRiwayat()"></div>
+        <div><label for="kSampai">Sampai</label><input type="date" id="kSampai" onchange="gambarKoreksiRiwayat()"></div>
+      </div>
+      <div class="isi" id="isiAnalisa"></div>
+    </div>
+  </section>
+
   <section id="panPosisi">
     <div class="angka">
       <div><div class="lbl">Outstanding</div><div class="val num" id="aBelum">—</div></div>
@@ -279,25 +294,21 @@ button.halus{background:#fff;color:var(--ink);font:inherit;font-size:13px;border
             <option value="belum">Belum diverifikasi</option>
             <option value="sudah">Sudah diverifikasi</option>
           </select></div>
+        <div><label>Entitas</label>
+          <div class="segmen" id="segVerif">
+            <button class="on" data-e="" onclick="setEntVerif('')">Semua</button>
+            <button data-e="VD" onclick="setEntVerif('VD')">VD</button>
+            <button data-e="TERAS" onclick="setEntVerif('TERAS')">Teras</button>
+          </div></div>
+        <div><label for="vUnit">Unit</label>
+          <select id="vUnit" onchange="gambarVerifikasi()"></select></div>
+        <div><label for="vDari">Setor dari</label><input type="date" id="vDari" onchange="gambarVerifikasi()"></div>
+        <div><label for="vSampai">Sampai</label><input type="date" id="vSampai" onchange="gambarVerifikasi()"></div>
         <div style="flex:1"></div>
         <button class="aksi" onclick="simpanVerifikasi()">Simpan Verifikasi</button>
         <span class="pesan" id="pesanVerif"></span>
       </div>
       <div class="isi" id="isiVerifikasi"></div>
-    </div>
-  </section>
-
-  <section id="panAnalisa" hidden>
-    <div class="form">
-      <div class="kepala">
-        <div><label for="aBulan">Bulan</label>
-          <input type="month" id="aBulan" onchange="gambarAnalisa()"></div>
-        <div><label for="kUnit">Koreksi unit</label>
-          <select id="kUnit" onchange="gambarKoreksiRiwayat()"></select></div>
-        <div><label for="kDari">Dari</label><input type="date" id="kDari" onchange="gambarKoreksiRiwayat()"></div>
-        <div><label for="kSampai">Sampai</label><input type="date" id="kSampai" onchange="gambarKoreksiRiwayat()"></div>
-      </div>
-      <div class="isi" id="isiAnalisa"></div>
     </div>
   </section>
 
@@ -415,6 +426,7 @@ async function muat(){
     try{
       DATA=await panggil("muatData");
       DATA.lain=DATA.lain||[]; DATA.jenis=DATA.jenis||[]; DATA.koreksi=DATA.koreksi||[];
+      bersihkanGanda();
       gerbang.style.display="none";
       app.style.display="block";
       document.getElementById("mode").style.display="none";
@@ -486,6 +498,29 @@ function geser(t,n){
   return d.toISOString().slice(0,10);
 }
 
+/* TOTAL_COLLECT milik satu tanggal omset, bukan milik tiap outlet, dan
+   ditulis aplikasi hanya di baris outlet pertama. Data yang dimuat dari
+   luar aplikasi kadang mengisinya di semua baris, sehingga nilainya
+   terhitung berlipat. Duplikat bernilai sama dinetralkan di memori supaya
+   seluruh perhitungan benar, tanpa menyentuh sheet. */
+let GANDA=0;
+function bersihkanGanda(){
+  GANDA=0;
+  const urut={};
+  DATA.master.forEach(m=>{urut[m[0]+"|"+m[2]]=Number(m[6])||1;});
+  const g={};
+  DATA.db.forEach(r=>{
+    if(!r.tglCollect||!(+r.totalCollect>0))return;
+    (g[r.unit+"|"+r.tgl]=g[r.unit+"|"+r.tgl]||[]).push(r);});
+  Object.keys(g).forEach(k=>{
+    const v=g[k];
+    if(v.length<2)return;
+    if(!v.every(r=>+r.totalCollect===+v[0].totalCollect))return; /* benar-benar terbagi, jangan disentuh */
+    v.sort((a,b)=>(urut[a.unit+"|"+a.outlet]||99)-(urut[b.unit+"|"+b.outlet]||99));
+    v.slice(1).forEach(r=>{r.totalCollect=0;GANDA++;});
+  });
+  return GANDA;
+}
 function unitUnik(){
   const m=new Map();
   DATA.master.forEach(x=>{
@@ -1532,80 +1567,175 @@ let ANALISA=null;
    ============================================================ */
 function peristiwaVerif(){
   const m={};
+  const kunci=r=>r.unit+"|"+r.tglCollect;
   DATA.db.filter(r=>r.tglCollect).forEach(r=>{
-    const k=r.unit+"|"+r.tglCollect;
+    const k=kunci(r);
     m[k]=m[k]||{unit:r.unit,tglCollect:r.tglCollect,tglSetor:r.tglSetor||"",
-                sistem:0,terima:0,tgl:new Set(),catatan:"",
+                omset:0,deposit:0,terima:0,terimaLain:0,baris:[],lain:[],
                 verifOleh:r.verifOleh||"",verifWaktu:r.verifWaktu||""};
-    m[k].sistem+=total(r); m[k].terima+=+r.totalCollect||0; m[k].tgl.add(r.tgl);
-    if(r.catatan&&!m[k].catatan)m[k].catatan=r.catatan;
-    if(r.verifOleh)m[k].verifOleh=r.verifOleh;
-    if(r.verifWaktu)m[k].verifWaktu=r.verifWaktu;
+    m[k].omset+=total(r); m[k].terima+=+r.totalCollect||0; m[k].baris.push(r);
+    if(!m[k].tglSetor&&r.tglSetor)m[k].tglSetor=r.tglSetor;
+    if(r.verifOleh){m[k].verifOleh=r.verifOleh;m[k].verifWaktu=r.verifWaktu||"";}
   });
   (DATA.lain||[]).filter(x=>x.tglCollect).forEach(x=>{
     const k=x.unit+"|"+x.tglCollect;
     m[k]=m[k]||{unit:x.unit,tglCollect:x.tglCollect,tglSetor:x.tglSetor||"",
-                sistem:0,terima:0,tgl:new Set(),catatan:"",
+                omset:0,deposit:0,terima:0,terimaLain:0,baris:[],lain:[],
                 verifOleh:x.verifOleh||"",verifWaktu:x.verifWaktu||""};
-    m[k].sistem+=x.nilai; m[k].terima+=+x.totalCollect||0; m[k].lain=true;
-    if(x.verifOleh)m[k].verifOleh=x.verifOleh;
+    m[k].deposit+=x.nilai; m[k].terimaLain+=+x.totalCollect||0; m[k].lain.push(x);
+    if(x.verifOleh){m[k].verifOleh=x.verifOleh;m[k].verifWaktu=x.verifWaktu||"";}
   });
-  return Object.keys(m).map(k=>({kunci:k,...m[k]}))
-    .sort((a,b)=>a.tglCollect.localeCompare(b.tglCollect));
+  return Object.keys(m).map(k=>({kunci:k,...m[k]}));
+}
+let ENT_VERIF="";
+function setEntVerif(e){
+  ENT_VERIF=e;
+  [...document.getElementById("segVerif").children].forEach(b=>b.classList.toggle("on",b.dataset.e===e));
+  gambarVerifikasi();
+}
+function siapkanSaringVerif(){
+  const su=document.getElementById("vUnit");
+  if(!su)return;
+  const pilih=su.value;
+  su.innerHTML='<option value="">Semua unit</option>'+
+    unitUnik().filter(u=>!ENT_VERIF||u.entitas===ENT_VERIF)
+      .map(u=>'<option value="'+u.kode+'">'+u.kode+'</option>').join("");
+  su.value=[...su.options].some(o=>o.value===pilih)?pilih:"";
 }
 function gambarVerifikasi(){
   const box=document.getElementById("isiVerifikasi");
   if(!box)return;
+  siapkanSaringVerif();
   const mode=(document.getElementById("vSaring")||{}).value||"belum";
+  const unit=(document.getElementById("vUnit")||{}).value||"";
+  const d1=(document.getElementById("vDari")||{}).value||"";
+  const d2=(document.getElementById("vSampai")||{}).value||"";
   const adm=DATA.aku&&DATA.aku.peran==="ADMIN";
   const A=acuan();
   const AMB=+DATA.config.AMBANG_SELISIH||0;
   const BV=+DATA.config.BATAS_VERIF_HARI||3;
   const BS=+DATA.config.BATAS_SETOR_HARI||1;
-  let p=peristiwaVerif().filter(x=>mode==="sudah"?x.verifOleh:!x.verifOleh);
-  if(mode==="sudah")p=p.reverse().slice(0,60);
+  const peta={}; unitUnik().forEach(u=>peta[u.kode]=u);
+
+  let p=peristiwaVerif().filter(x=>{
+    const u=peta[x.unit];
+    if(!u)return false;
+    if(mode==="sudah"?!x.verifOleh:!!x.verifOleh)return false;
+    if(ENT_VERIF&&u.entitas!==ENT_VERIF)return false;
+    if(unit&&x.unit!==unit)return false;
+    const t=x.tglSetor||x.tglCollect;
+    if(d1&&t<d1)return false;
+    if(d2&&t>d2)return false;
+    return true;});
+
+  let h="";
+  if(GANDA&&adm)
+    h+='<p class="catatan" style="color:var(--stamp)">'+GANDA+' baris collect ganda dinetralkan '+
+       'sementara di layar. Sheet DB masih perlu dirapikan.</p>';
   if(!p.length){
-    box.innerHTML='<div class="kosongan">'+
+    box.innerHTML=h+'<div class="kosongan">'+
       (mode==="sudah"?"Belum ada yang diverifikasi.":"Tidak ada yang menunggu verifikasi.")+'</div>';
     return;
   }
-  let h='<div class="gulir"><table class="stack"><thead><tr>'+
-    (mode==="sudah"?'':'<th style="width:40px">Ya</th>')+
-    '<th>Unit</th><th>Jemput</th><th>Setor</th><th class="kanan">Omset sistem</th>'+
-    '<th class="kanan">Diterima GC</th><th class="kanan">Selisih</th>'+
-    (mode==="sudah"?'<th>Diverifikasi</th>':'<th>Status</th>')+'</tr></thead><tbody>';
-  p.forEach(x=>{
-    const sel=x.terima-x.sistem;
-    const tunggu=beda(x.tglCollect,A);
-    const jeda=x.tglSetor?beda(x.tglCollect,x.tglSetor):null;
-    const besar=AMB&&Math.abs(sel)>AMB;
-    const kunci=besar&&!adm;
-    const tanda=[];
-    if(besar)tanda.push('<span class="tag n">selisih besar</span>');
-    if(tunggu>BV)tanda.push('<span class="tag u">menunggu '+tunggu+' hari</span>');
-    if(jeda!==null&&jeda>BS)tanda.push('<span class="tag u">setor H+'+jeda+'</span>');
-    if(!x.tglSetor)tanda.push('<span class="tag d">belum disetor</span>');
-    h+='<tr data-k="'+x.kunci+'">'+
-      (mode==="sudah"?'':'<td class="tengah" data-l="Verifikasi"><input type="checkbox" data-v="'+x.kunci+'"'+
-        (kunci?" disabled":"")+'></td>')+
-      '<td data-l="Unit"><b>'+x.unit+'</b></td>'+
-      '<td data-l="Jemput">'+tglTeks(x.tglCollect)+'</td>'+
-      '<td data-l="Setor">'+(x.tglSetor?tglTeks(x.tglSetor):"—")+'</td>'+
-      '<td class="kanan num" data-l="Omset sistem">'+rp(x.sistem)+'</td>'+
-      '<td class="kanan num" data-l="Diterima GC">'+rp(x.terima)+'</td>'+
-      '<td class="kanan num" data-l="Selisih" style="color:'+
-        (sel<0?"var(--stamp)":(sel>0?"var(--amber)":"var(--ink3)"))+'">'+
-        (sel>0?"+":"")+rp(sel)+'</td>'+
-      '<td data-l="Status">'+(mode==="sudah"
-        ? '<span class="rinci">'+x.verifOleh+(x.verifWaktu?" · "+tglTeks(x.verifWaktu):"")+'</span>'
-        : (tanda.join(" ")||'<span class="rinci">sesuai</span>')+
-          (kunci?'<div class="rinci">perlu dicentang admin</div>':''))+'</td></tr>';
+
+  /* Dikelompokkan per tanggal setor, karena satu tanggal setor sama dengan
+     satu berkas JV dan satu bukti setor bank. */
+  const grup={};
+  p.forEach(x=>{const t=x.tglSetor||"(belum disetor)";(grup[t]=grup[t]||[]).push(x);});
+  const urutTgl=Object.keys(grup).sort();
+  if(mode==="sudah")urutTgl.reverse();
+
+  urutTgl.forEach(t=>{
+    const arr=grup[t].sort((a,b)=>a.unit.localeCompare(b.unit));
+    const jSis=arr.reduce((s,x)=>s+x.omset+x.deposit,0);
+    const jTer=arr.reduce((s,x)=>s+x.terima+x.terimaLain,0);
+    h+='<div class="blok" style="margin-top:20px"><div class="judul">'+
+       '<h2>Setor '+(t==="(belum disetor)"?t:tglTeks(t))+' · '+arr.length+' unit</h2>'+
+       '<span class="biaya">sistem <b class="num">'+rp(jSis)+'</b> · diterima <b class="num">'+
+       rp(jTer)+'</b></span></div>';
+    h+='<div class="gulir"><table class="stack"><thead><tr>'+
+       (mode==="sudah"?'':'<th style="width:40px">Ya</th>')+
+       '<th>Unit</th><th>Jemput</th><th class="kanan">Omset sistem</th>'+
+       '<th class="kanan">Deposit</th><th class="kanan">Diterima GC</th>'+
+       '<th class="kanan">Selisih</th><th>'+(mode==="sudah"?'Diverifikasi':'Status')+'</th>'+
+       '</tr></thead><tbody>';
+    arr.forEach(x=>{
+      const sis=x.omset+x.deposit, ter=x.terima+x.terimaLain, sel=ter-sis;
+      const tunggu=beda(x.tglCollect,A);
+      const jeda=x.tglSetor?beda(x.tglCollect,x.tglSetor):null;
+      const besar=AMB&&Math.abs(sel)>AMB, kunci=besar&&!adm;
+      const tanda=[];
+      if(besar)tanda.push('<span class="tag n">selisih besar</span>');
+      if(tunggu>BV)tanda.push('<span class="tag u">menunggu '+tunggu+' hari</span>');
+      if(jeda!==null&&jeda>BS)tanda.push('<span class="tag u">setor H+'+jeda+'</span>');
+      if(!x.tglSetor)tanda.push('<span class="tag d">belum disetor</span>');
+      const id=x.kunci.replace(/[^A-Za-z0-9]/g,"_");
+      h+='<tr>'+
+        (mode==="sudah"?'':'<td class="tengah" data-l="Verifikasi"><input type="checkbox" data-v="'+
+          x.kunci+'"'+(kunci?" disabled":"")+'></td>')+
+        '<td data-l="Unit"><b>'+x.unit+'</b>'+
+          '<button class="tombolRinci" id="tb_'+id+'" onclick="bukaVerif(\''+id+'\')">rincian</button></td>'+
+        '<td data-l="Jemput">'+tglTeks(x.tglCollect)+'</td>'+
+        '<td class="kanan num" data-l="Omset sistem">'+rp(x.omset)+'</td>'+
+        '<td class="kanan num" data-l="Deposit">'+(x.deposit?rp(x.deposit):"—")+'</td>'+
+        '<td class="kanan num" data-l="Diterima GC">'+rp(ter)+'</td>'+
+        '<td class="kanan num" data-l="Selisih" style="color:'+
+          (sel<0?"var(--stamp)":(sel>0?"var(--amber)":"var(--ink3)"))+'">'+
+          (sel>0?"+":"")+rp(sel)+'</td>'+
+        '<td data-l="Status">'+(mode==="sudah"
+          ? '<span class="rinci">'+x.verifOleh+(x.verifWaktu?" · "+tglTeks(x.verifWaktu):"")+'</span>'
+          : (tanda.join(" ")||'<span class="rinci">sesuai</span>')+
+            (kunci?'<div class="rinci">perlu dicentang admin</div>':''))+'</td></tr>';
+      h+='<tr class="detail" id="dt_'+id+'"><td colspan="8" style="padding:0">'+
+         rincianVerif(x,peta[x.unit])+'</td></tr>';
+    });
+    h+='</tbody></table></div></div>';
   });
-  h+='</tbody></table></div>';
   if(mode!=="sudah")
     h+='<p class="catatan">Centang berarti berkas dari GC sudah diperiksa. '+
        'Setelah tercentang, nilainya hanya bisa diubah admin.</p>';
   box.innerHTML=h;
+}
+/* Rincian per tanggal omset dan per outlet. Untuk unit dua outlet seperti
+   PLS, omset dipisah Tigadari dan Pidari, sedangkan uang yang diterima
+   melekat pada tanggalnya, bukan pada outletnya. */
+function rincianVerif(x,u){
+  const tgl=[...new Set(x.baris.map(r=>r.tgl))].sort();
+  const banyak=u&&u.outlet.length>1;
+  let h='<div class="gulir" style="padding:6px 0 12px"><table><thead><tr><th>Tanggal omset</th>'+
+        (banyak?'<th>Outlet</th>':'')+
+        '<th class="kanan">Breakfast</th><th class="kanan">Lunch</th><th class="kanan">Dinner</th>'+
+        '<th class="kanan">Net</th><th class="kanan">Diterima</th></tr></thead><tbody>';
+  tgl.forEach(t=>{
+    const rr=x.baris.filter(r=>r.tgl===t);
+    const ter=rr.reduce((s,r)=>s+(+r.totalCollect||0),0);
+    const urut=(u?u.outlet:[]).map(o=>o.kode);
+    rr.sort((a,b)=>urut.indexOf(a.outlet)-urut.indexOf(b.outlet));
+    rr.forEach((r,i)=>{
+      h+='<tr><td>'+(i===0?tglTeks(t):"")+'</td>'+
+         (banyak?'<td>'+r.outlet+'</td>':'')+
+         '<td class="kanan num">'+rp(r.bfast||0)+'</td>'+
+         '<td class="kanan num">'+rp(r.lunch||0)+'</td>'+
+         '<td class="kanan num">'+rp(r.dinner||0)+'</td>'+
+         '<td class="kanan num">'+rp(total(r))+'</td>'+
+         '<td class="kanan num">'+(i===0?rp(ter):"")+'</td></tr>';
+    });
+  });
+  x.lain.forEach(l=>{
+    h+='<tr><td>'+tglTeks(l.tgl)+'</td>'+(banyak?'<td></td>':'')+
+       '<td colspan="3" class="rinci">'+namaJenis(l.jenis)+' · '+l.referensi+'</td>'+
+       '<td class="kanan num">'+rp(l.nilai)+'</td>'+
+       '<td class="kanan num">'+rp(l.totalCollect)+'</td></tr>';
+  });
+  if(x.baris.some(r=>r.catatan))
+    h+='<tr><td colspan="'+(banyak?7:6)+'" class="rinci">Catatan GC: '+
+       x.baris.filter(r=>r.catatan).map(r=>r.catatan)[0]+'</td></tr>';
+  return h+'</tbody></table></div>';
+}
+function bukaVerif(id){
+  const d=document.getElementById("dt_"+id), t=document.getElementById("tb_"+id);
+  if(!d)return;
+  if(t)t.textContent=d.classList.toggle("buka")?"tutup":"rincian";
 }
 async function simpanVerifikasi(){
   const p=document.getElementById("pesanVerif");
@@ -1717,6 +1847,7 @@ function gambarAnalisa(){
      new Intl.NumberFormat("id-ID").format(Math.round(tRupiahHari/1e6))+
      '</b> juta rupiah-hari</p></div>';
 
+  h+=blokStatusVerif(bulan);
   h+=tabelKelompok("Per Entitas",kelompok(arr,x=>x.ent),tz,aoaKel,"Entitas");
   h+=tabelKelompok("Per Zona",kelompok(arr,x=>x.zona),tz,aoaKel,"Zona");
 
@@ -1812,6 +1943,93 @@ function gambarKoreksiRiwayat(){
   box.innerHTML=h;
   if(ANALISA)ANALISA.koreksi=aoa;
 }
+/* Status verifikasi IA atas omset yang sudah ter-collect. Dikumpulkan
+   per unit, dengan daftar yang masih menggantung di bawahnya. */
+let AOA_VERIF=[["Unit","Entitas","Collect","Terverifikasi","Belum","Nilai belum",
+                "Jeda setor rata-rata hari","Menunggu terlama hari"]];
+function blokStatusVerif(bulan){
+  const A=acuan();
+  const BV=+DATA.config.BATAS_VERIF_HARI||3;
+  const BS=+DATA.config.BATAS_SETOR_HARI||1;
+  const peta={}; unitUnik().forEach(u=>peta[u.kode]=u);
+  const ev=peristiwaVerif().filter(x=>(x.tglSetor||x.tglCollect).slice(0,7)===bulan);
+  AOA_VERIF=[["Unit","Entitas","Collect","Terverifikasi","Belum","Nilai belum",
+              "Jeda setor rata-rata hari","Menunggu terlama hari"]];
+  if(!ev.length)
+    return '<div class="blok"><div class="judul"><h2>Status Verifikasi</h2></div>'+
+           '<div class="kosongan">Belum ada collect di bulan itu.</div></div>';
+
+  const U={};
+  let nVerif=0,nilaiBelum=0,tunggu=0,jedaTotal=0,jedaN=0,lambat=0;
+  ev.forEach(x=>{
+    const u=peta[x.unit]; if(!u)return;
+    const nilai=x.terima+x.terimaLain;
+    U[x.unit]=U[x.unit]||{ent:u.entitas,n:0,v:0,belum:0,nilai:0,jeda:0,jedaN:0,tunggu:0};
+    const p=U[x.unit];
+    p.n++; p.nilai+= x.verifOleh?0:nilai;
+    if(x.verifOleh){p.v++;nVerif++;}
+    else{
+      p.belum++; nilaiBelum+=nilai;
+      const t=beda(x.tglCollect,A);
+      if(t>p.tunggu)p.tunggu=t;
+      if(t>tunggu)tunggu=t;
+    }
+    if(x.tglSetor){
+      const j=beda(x.tglCollect,x.tglSetor);
+      p.jeda+=j; p.jedaN++; jedaTotal+=j; jedaN++;
+      if(j>BS)lambat++;
+    }
+  });
+
+  let h='<div class="angka" style="margin-top:26px;border-top:1px solid var(--rule)">'+
+    kartu("Collect bulan ini",ev.length)+
+    kartu("Terverifikasi",nVerif+" / "+ev.length)+
+    kartu("Nilai belum verif",mio(nilaiBelum))+
+    kartu("Menunggu terlama",tunggu?tunggu+" hari":"—")+
+    kartu("Setor lewat H+"+BS,lambat)+'</div>';
+
+  h+='<div class="blok"><div class="judul"><h2>Status Verifikasi</h2>'+
+     '<button class="halus" onclick="salin(AOA_VERIF,this)">Salin</button></div>'+
+     '<div class="gulir"><table><thead><tr><th>Unit</th><th>Entitas</th>'+
+     '<th class="kanan">Collect</th><th class="kanan">Terverifikasi</th>'+
+     '<th class="kanan">Belum</th><th class="kanan">Nilai belum</th>'+
+     '<th class="kanan">Jeda setor</th><th class="kanan">Menunggu terlama</th>'+
+     '</tr></thead><tbody>';
+  Object.keys(U).sort((a,b)=>U[b].nilai-U[a].nilai).forEach(k=>{
+    const p=U[k];
+    const jeda=p.jedaN?(p.jeda/p.jedaN):null;
+    AOA_VERIF.push([k,p.ent,p.n,p.v,p.belum,p.nilai,
+                    jeda===null?"":+jeda.toFixed(2),p.tunggu]);
+    h+='<tr><td><b>'+k+'</b></td><td>'+p.ent+'</td>'+
+       '<td class="kanan num">'+p.n+'</td>'+
+       '<td class="kanan num">'+p.v+'</td>'+
+       '<td class="kanan num" style="color:'+(p.belum?"var(--stamp)":"inherit")+'">'+p.belum+'</td>'+
+       '<td class="kanan num">'+(p.nilai?rp(p.nilai):"—")+'</td>'+
+       '<td class="kanan num" style="color:'+(jeda!==null&&jeda>BS?"var(--amber)":"inherit")+'">'+
+         (jeda===null?"—":jeda.toFixed(1))+'</td>'+
+       '<td class="kanan num" style="color:'+(p.tunggu>BV?"var(--stamp)":"inherit")+'">'+
+         (p.tunggu||"—")+'</td></tr>';
+  });
+  h+='</tbody></table></div>';
+
+  const gantung=ev.filter(x=>!x.verifOleh)
+    .sort((a,b)=>a.tglCollect.localeCompare(b.tglCollect));
+  if(gantung.length){
+    h+='<div class="gulir" style="margin-top:14px"><table><thead><tr>'+
+       '<th>Unit</th><th>Jemput</th><th>Setor</th><th class="kanan">Nilai</th>'+
+       '<th class="kanan">Menunggu</th></tr></thead><tbody>';
+    gantung.slice(0,25).forEach(x=>{
+      const t=beda(x.tglCollect,A);
+      h+='<tr><td><b>'+x.unit+'</b></td><td>'+tglTeks(x.tglCollect)+'</td>'+
+         '<td>'+(x.tglSetor?tglTeks(x.tglSetor):"—")+'</td>'+
+         '<td class="kanan num">'+rp(x.terima+x.terimaLain)+'</td>'+
+         '<td class="kanan num" style="color:'+(t>BV?"var(--stamp)":"inherit")+'">'+t+' hari</td></tr>';
+    });
+    h+='</tbody></table></div>';
+    if(gantung.length>25)h+='<p class="catatan">'+gantung.length+' menggantung, 25 terlama ditampilkan.</p>';
+  }
+  return h+'</div>';
+}
 function kartu(l,v){return '<div><div class="lbl">'+l+'</div><div class="val num">'+v+'</div></div>';}
 function kelompok(arr,fn){
   const m={};
@@ -1847,6 +2065,7 @@ function unduhAnalisaXLSX(){
     {nama:"Ringkasan",aoa:ANALISA.ringkas},
     {nama:"Per kelompok",aoa:ANALISA.kelompok},
     {nama:"Per unit",aoa:ANALISA.unit},
+    {nama:"Verifikasi",aoa:AOA_VERIF},
     {nama:"Koreksi",aoa:ANALISA.koreksi}]);
   const p=document.getElementById("pesanAnalisa");
   if(p){p.className="pesan";p.textContent="Berkas Excel dibuat.";}
@@ -1872,6 +2091,7 @@ async function muatUlang(btn){
       const baru=await panggil("muatData");
       DATA=baru;
       DATA.lain=DATA.lain||[]; DATA.jenis=DATA.jenis||[]; DATA.koreksi=DATA.koreksi||[];
+      bersihkanGanda();
     }
     LAIN_BARU={}; unitTambahan=[]; KOTOR=false;
     gambarPosisi();
