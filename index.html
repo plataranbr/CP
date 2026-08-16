@@ -175,6 +175,33 @@ tr.detail.buka{display:table-row}
     <h1 style="margin:0 0 6px;letter-spacing:.04em">CPR</h1>
     <p style="color:var(--ink2);font-size:14px;margin:0 0 26px">Masuk dengan akun yang terdaftar.</p>
     <div id="tombolMasuk" style="display:flex;justify-content:center"></div>
+
+    <div id="kotakPin" style="display:none;text-align:left">
+      <p id="pinJudul" style="font-size:13px;color:var(--ink2);margin:0 0 14px;text-align:center"></p>
+      <div id="pinBarisLama" style="display:none;margin-bottom:10px">
+        <label for="pinLama">PIN lama</label>
+        <input type="password" id="pinLama" inputmode="numeric" maxlength="6" autocomplete="off"
+               style="width:100%;letter-spacing:.4em;text-align:center;font-size:18px">
+      </div>
+      <div style="margin-bottom:10px">
+        <label for="pinSatu" id="pinLabelSatu">PIN</label>
+        <input type="password" id="pinSatu" inputmode="numeric" maxlength="6" autocomplete="off"
+               style="width:100%;letter-spacing:.4em;text-align:center;font-size:18px"
+               onkeydown="if(event.key==='Enter')kirimPin()">
+      </div>
+      <div id="pinBarisUlang" style="display:none;margin-bottom:10px">
+        <label for="pinDua">Ulangi PIN</label>
+        <input type="password" id="pinDua" inputmode="numeric" maxlength="6" autocomplete="off"
+               style="width:100%;letter-spacing:.4em;text-align:center;font-size:18px"
+               onkeydown="if(event.key==='Enter')kirimPin()">
+      </div>
+      <button class="aksi" style="width:100%;margin-top:6px" onclick="kirimPin()">Lanjut</button>
+      <div style="display:flex;justify-content:space-between;margin-top:12px">
+        <button class="halus" id="pinGanti" onclick="modePin('ganti')">Ganti PIN</button>
+        <button class="halus" onclick="keluar()">Batal</button>
+      </div>
+    </div>
+
     <p id="pesanMasuk" style="color:var(--stamp);font-size:13.5px;margin-top:18px;min-height:20px"></p>
   </div>
 </div>
@@ -320,6 +347,20 @@ tr.detail.buka{display:table-row}
 </div>
 </div>
 
+<div id="lapisPin" style="display:none;position:fixed;inset:0;z-index:60;
+     background:rgba(16,36,58,.55);align-items:center;justify-content:center;padding:20px">
+  <div style="background:var(--paper);border:1px solid var(--ink);border-radius:3px;
+       padding:22px;max-width:340px;width:100%">
+    <div class="lbl" style="margin-bottom:8px">Sesi berakhir</div>
+    <p class="rinci" style="margin:0 0 14px">Masukkan PIN untuk melanjutkan. Isian yang belum
+      disimpan tetap ada.</p>
+    <input type="password" id="pinLagi" inputmode="numeric" maxlength="6" autocomplete="off"
+           style="width:100%;letter-spacing:.4em;text-align:center;font-size:18px"
+           onkeydown="if(event.key==='Enter')kirimPinLagi()">
+    <button class="aksi" style="width:100%;margin-top:12px" onclick="kirimPinLagi()">Lanjut</button>
+    <p class="pesan gagal" id="pesanPinLagi" style="min-height:18px;margin:8px 0 0"></p>
+  </div>
+</div>
 
 <script>
 /* Data contoh untuk pratinjau saja. Semuanya karangan. Tidak ada nomor
@@ -353,18 +394,24 @@ const modeAPI   = API_URL.indexOf("script.google.com") >= 0;
 const adaServer = modeAPI;
 let ID_TOKEN = "";
 try{ ID_TOKEN = sessionStorage.getItem("cpr_token") || ""; }catch(e){}
+/* Token sesi lahir dari PIN yang benar dan hanya hidup di variabel ini.
+   Tidak masuk sessionStorage maupun cookie, jadi muat ulang halaman selalu
+   meminta PIN lagi. */
+let SESI = "";
+const AKSI_TANPA_SESI = ["statusPin","masuk","aturPin"];
 let DATA={master:[],zona:[],config:{},db:[]};
 async function panggil(fn,arg){
   if(!modeAPI) throw new Error("mode pratinjau");
   if(!ID_TOKEN) throw new Error("Belum masuk.");
   const res=await fetch(API_URL,{method:"POST",
     headers:{"Content-Type":"text/plain;charset=utf-8"},
-    body:JSON.stringify({aksi:fn,data:arg,idToken:ID_TOKEN})});
+    body:JSON.stringify({aksi:fn,data:arg,idToken:ID_TOKEN,sesi:SESI})});
   if(!res.ok) throw new Error("Jaringan bermasalah ("+res.status+").");
   const j=await res.json();
   if(!j.ok){
     if(j.galat==="AKSES_DITOLAK"){ tolak("Akun Anda tidak terdaftar, atau sesi sudah berakhir.",true); }
-    throw new Error(j.galat||"Gagal.");
+    if(j.galat==="SESI_HABIS"&&AKSI_TANPA_SESI.indexOf(fn)<0){ bukaLapisPin(); }
+    throw new Error(j.galat==="SESI_HABIS"?"Sesi berakhir, masukkan PIN.":(j.galat||"Gagal."));
   }
   return j.hasil;
 }
@@ -373,6 +420,13 @@ async function panggil(fn,arg){
    supaya tidak berputar masuk-keluar. */
 let OTOMATIS=true, GSI_INIT=false, GSI_MENUNGGU=false;
 function tolak(pesan,matikanOtomatis){
+  SESI="";
+  const kp=document.getElementById("kotakPin");
+  if(kp)kp.style.display="none";
+  const tm=document.getElementById("tombolMasuk");
+  if(tm)tm.style.display="flex";
+  const lp=document.getElementById("lapisPin");
+  if(lp)lp.style.display="none";
   if(matikanOtomatis){
     OTOMATIS=false;
     try{ google.accounts.id.disableAutoSelect(); }catch(e){}
@@ -414,7 +468,74 @@ async function terimaToken(res){
   ID_TOKEN=res.credential;
   sessionStorage.setItem("cpr_token",ID_TOKEN);
   document.getElementById("pesanMasuk").textContent="Memeriksa akses…";
-  await muat();
+  await tahapPin();
+}
+
+/* Setelah identitas Google terbukti, lapis kedua: PIN. Kalau belum pernah
+   punya PIN, orangnya membuat sendiri di sini — tidak ada PIN apa adanya
+   yang perlu dititipkan lewat sheet. */
+let MODE_PIN="masuk";
+async function tahapPin(){
+  document.getElementById("tombolMasuk").style.display="none";
+  document.getElementById("pesanMasuk").textContent="";
+  try{
+    const st=await panggil("statusPin");
+    modePin(st.punyaPin?"masuk":"buat");
+  }catch(e){
+    tolak("Gagal masuk. "+e.message,true);
+  }
+}
+function modePin(m){
+  MODE_PIN=m;
+  const buat=m==="buat", ganti=m==="ganti";
+  document.getElementById("kotakPin").style.display="block";
+  document.getElementById("pinJudul").textContent=
+    buat?"Buat PIN enam angka untuk akun ini.":
+    ganti?"Masukkan PIN lama, lalu PIN barunya.":"Masukkan PIN.";
+  document.getElementById("pinBarisLama").style.display=ganti?"block":"none";
+  document.getElementById("pinBarisUlang").style.display=(buat||ganti)?"block":"none";
+  document.getElementById("pinLabelSatu").textContent=(buat||ganti)?"PIN baru":"PIN";
+  document.getElementById("pinGanti").style.display=(m==="masuk")?"inline-block":"none";
+  ["pinLama","pinSatu","pinDua"].forEach(id=>document.getElementById(id).value="");
+  document.getElementById("pesanMasuk").textContent="";
+  setTimeout(()=>{const e=document.getElementById(ganti?"pinLama":"pinSatu");if(e)e.focus();},60);
+}
+async function kirimPin(){
+  const p=document.getElementById("pesanMasuk");
+  const satu=document.getElementById("pinSatu").value.trim();
+  const dua=document.getElementById("pinDua").value.trim();
+  const lama=document.getElementById("pinLama").value.trim();
+  const buat=MODE_PIN!=="masuk";
+  if(!/^\d{6}$/.test(satu)){p.textContent="PIN harus enam angka.";return;}
+  if(buat&&satu!==dua){p.textContent="Ulangan PIN tidak sama.";return;}
+  p.textContent="Memeriksa…";
+  try{
+    const hasil=buat
+      ? await panggil("aturPin",{pinLama:lama,pinBaru:satu})
+      : await panggil("masuk",{pin:satu});
+    SESI=hasil.sesi;
+    document.getElementById("kotakPin").style.display="none";
+    await muat();
+  }catch(e){ p.textContent=e.message; }
+}
+function bukaLapisPin(){
+  const l=document.getElementById("lapisPin");
+  if(!l||l.style.display==="flex")return;
+  l.style.display="flex";
+  document.getElementById("pesanPinLagi").textContent="";
+  const e=document.getElementById("pinLagi");
+  if(e){e.value="";setTimeout(()=>e.focus(),60);}
+}
+async function kirimPinLagi(){
+  const p=document.getElementById("pesanPinLagi");
+  const v=document.getElementById("pinLagi").value.trim();
+  if(!/^\d{6}$/.test(v)){p.textContent="PIN harus enam angka.";return;}
+  p.textContent="Memeriksa…";
+  try{
+    const hasil=await panggil("masuk",{pin:v});
+    SESI=hasil.sesi;
+    document.getElementById("lapisPin").style.display="none";
+  }catch(e){ p.textContent=e.message; }
 }
 
 async function muat(){
@@ -422,6 +543,7 @@ async function muat(){
   const app=document.getElementById("aplikasi");
   if(modeAPI){
     if(!ID_TOKEN){ tolak(""); return; }
+    if(!SESI){ await tahapPin(); return; }
     try{
       DATA=await panggil("muatData");
       DATA.lain=DATA.lain||[]; DATA.jenis=DATA.jenis||[]; DATA.koreksi=DATA.koreksi||[];
