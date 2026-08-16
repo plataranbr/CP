@@ -163,11 +163,7 @@ button.halus{background:#fff;color:var(--ink);font:inherit;font-size:13px;border
   input[type=checkbox]{width:20px;height:20px}
 }
 @media (max-width:420px){ .angka{grid-template-columns:1fr} }
-@media print{
-  header,nav,.mode,.bar,#panPosisi,#panOmset,#panCollect{display:none!important}
-  #cetak{display:block!important}
-}
-#cetak{display:none}
+
 </style>
 </head>
 <body>
@@ -281,6 +277,10 @@ button.halus{background:#fff;color:var(--ink);font:inherit;font-size:13px;border
       <div class="kepala">
         <div><label for="aBulan">Bulan</label>
           <input type="month" id="aBulan" onchange="gambarAnalisa()"></div>
+        <div><label for="kUnit">Koreksi unit</label>
+          <select id="kUnit" onchange="gambarKoreksiRiwayat()"></select></div>
+        <div><label for="kDari">Dari</label><input type="date" id="kDari" onchange="gambarKoreksiRiwayat()"></div>
+        <div><label for="kSampai">Sampai</label><input type="date" id="kSampai" onchange="gambarKoreksiRiwayat()"></div>
       </div>
       <div class="isi" id="isiAnalisa"></div>
     </div>
@@ -294,7 +294,6 @@ button.halus{background:#fff;color:var(--ink);font:inherit;font-size:13px;border
 </div>
 </div>
 
-<div id="cetak"></div>
 
 <script>
 /* Data contoh untuk pratinjau saja. Semuanya karangan. Tidak ada nomor
@@ -381,7 +380,7 @@ async function muat(){
     if(!ID_TOKEN){ tolak(""); return; }
     try{
       DATA=await panggil("muatData");
-      DATA.lain=DATA.lain||[]; DATA.jenis=DATA.jenis||[];
+      DATA.lain=DATA.lain||[]; DATA.jenis=DATA.jenis||[]; DATA.koreksi=DATA.koreksi||[];
       gerbang.style.display="none";
       app.style.display="block";
       document.getElementById("mode").textContent="Terhubung ke Google Sheet.";
@@ -398,7 +397,7 @@ async function muat(){
   DATA={master:MASTER_CONTOH,zona:ZONA_CONTOH,config:CONFIG_CONTOH,
         db:DB_CONTOH.map(r=>({tgl:r[0],unit:r[1],outlet:r[2],lunch:r[3],dinner:r[4],bfast:r[5],
                               tglCollect:r[6],tglSetor:r[7],totalCollect:r[8],catatan:r[9]||""})),
-        lain:LAIN_CONTOH.map(x=>({...x})),jenis:JENIS_CONTOH,
+        lain:LAIN_CONTOH.map(x=>({...x})),jenis:JENIS_CONTOH,koreksi:[],
         aku:{nama:"Pratinjau",peran:"ADMIN"}};
   document.getElementById("mode").textContent=
     "Mode pratinjau dengan data contoh. Perubahan tidak tersimpan.";
@@ -453,7 +452,8 @@ function unitUnik(){
   DATA.master.forEach(x=>{
     if(!m.has(x[0]))m.set(x[0],{kode:x[0],nama:x[1],zona:x[4],titik:x[5],varian:x[7],
       akunBank:x[8],namaBank:x[9],akunClr:x[10],akunOvr:x[11],
-      entitas:(x[12]||"VD").toUpperCase(),hariRotasi:String(x[13]||"").trim(),outlet:[]});
+      entitas:(x[12]||"VD").toUpperCase(),hariRotasi:String(x[13]||"").trim(),
+      biayaSendiri:+x[14]||0,biayaTambah:+x[15]||0,outlet:[]});
     m.get(x[0]).outlet.push({kode:x[2],nama:x[3],urut:+x[6]||1});});
   const a=[...m.values()]; a.forEach(u=>u.outlet.sort((p,q)=>p.urut-q.urut)); return a;
 }
@@ -472,6 +472,25 @@ function zonaHari(t){
   const z=DATA.zona.find(x=>x[0]!=="KANTOR"&&normHari(x[2])!=="tia"&&cocokHari(x[2],t));
   return z?z[0]:null;}
 function biaya(z){const x=DATA.zona.find(a=>a[0]===z);return x?+x[1]||0:0;}
+/* Biaya sekelompok unit dalam sehari. Per zona diambil satu unit termahal
+   sebagai jangkar rute, sisanya menyumbang biaya menyisip saja.
+   Kalau MASTER_UNIT belum diisi, jatuh ke BIAYA_LOOP per zona. */
+function biayaKelompok(arr){
+  const z={};
+  arr.forEach(x=>{const u=x.u||x; if(u.zona==="KANTOR")return;
+    (z[u.zona]=z[u.zona]||[]).push(u);});
+  let t=0;
+  Object.keys(z).forEach(zona=>{
+    const us=z[zona];
+    const adaAngka=us.some(u=>u.biayaSendiri>0);
+    if(!adaAngka){ t+=biaya(zona); return; }
+    let jangkar=us[0];
+    us.forEach(u=>{ if((u.biayaSendiri||0)>(jangkar.biayaSendiri||0)) jangkar=u; });
+    t+=jangkar.biayaSendiri||0;
+    us.forEach(u=>{ if(u!==jangkar) t+=u.biayaTambah||0; });
+  });
+  return t;
+}
 /* Jadwal per unit. HARI_ROTASI di MASTER_UNIT menang atas zonanya.
    Kalau kosong, unit ikut jadwal zonanya, dan zona KANTOR tiap hari. */
 function unitJadwal(u,t){
@@ -539,9 +558,7 @@ function gambarPosisi(){
   const besar=sisa.filter(x=>x.kas>=AL);
   const besok=bes?R.filter(x=>unitJadwal(x.u,bes.tgl)&&!besar.includes(x)&&!rot.includes(x)):[];
 
-  const zonaBiaya=arr=>{const z=[...new Set(arr.filter(x=>x.u.zona!=="KANTOR").map(x=>x.u.zona))];
-    return z.reduce((s,q)=>s+biaya(q),0);};
-  const bHari=zonaBiaya(rot), bBesar=zonaBiaya(besar), bBesok=zonaBiaya(besok);
+  const bHari=biayaKelompok(rot), bBesar=biayaKelompok(besar), bBesok=biayaKelompok(besok);
 
   let h="";
   h+=blok("Rotasi hari ini"+(zHari?" · "+zHari:""),
@@ -555,8 +572,9 @@ function gambarPosisi(){
         bBesok, besok, A);
   h+='<div class="blok"><div class="judul"><h2>Total estimasi transport hari ini</h2>'+
      '<span class="biaya"><b>'+rb(bHari+bBesar)+'</b></span></div>'+
-     '<p class="ket">Dihitung per zona per hari, bukan per kunjungan. '+
-     'Unit dalam satu zona ditempuh dalam satu rute yang sama.</p></div>';
+     '<p class="ket">Per zona diambil satu unit termahal sebagai jangkar rute, '+
+     'sisanya dihitung biaya menyisip saja. Harga GoCar berubah menurut jam dan macet, '+
+     'jadi angka ini wajar meleset sekitar sepuluh persen.</p></div>';
   document.getElementById("daftar").innerHTML=h;
 }
 function blok(judul,ket,biayaTotal,arr,A){
@@ -824,6 +842,7 @@ function gambarCollect(){
     });
     h+='</div>';
   });
+  h+=blokKoreksi();
   document.getElementById("isiCollect").innerHTML=h||'<div class="kosongan">Tidak ada unit yang menunggu.</div>';
   unitUnik().forEach(u=>hitungCollect(u.kode));
 }
@@ -914,19 +933,138 @@ function blokLain(kode){
   return h;
 }
 
-/* ================= EXPORT ================= */
+/* ---------- koreksi collect yang sudah tersimpan ---------- */
+function peristiwaCollect(){
+  const ent=new Set(unitEnt("collect").map(u=>u.kode));
+  const m={};
+  DATA.db.filter(r=>r.tglCollect&&ent.has(r.unit)).forEach(r=>{
+    const k=r.unit+"|"+r.tglCollect;
+    m[k]=m[k]||{unit:r.unit,tglCollect:r.tglCollect,tglSetor:r.tglSetor||"",nilai:0,tgl:new Set()};
+    m[k].nilai+=+r.totalCollect||0; m[k].tgl.add(r.tgl);
+  });
+  (DATA.lain||[]).filter(x=>x.tglCollect&&ent.has(x.unit)).forEach(x=>{
+    const k=x.unit+"|"+x.tglCollect;
+    m[k]=m[k]||{unit:x.unit,tglCollect:x.tglCollect,tglSetor:x.tglSetor||"",nilai:0,tgl:new Set()};
+    m[k].nilai+=+x.totalCollect||0;
+  });
+  return Object.keys(m).map(k=>({kunci:k,...m[k]}))
+    .sort((a,b)=>b.tglCollect.localeCompare(a.tglCollect)).slice(0,40);
+}
+function blokKoreksi(){
+  const p=peristiwaCollect();
+  let h='<div class="blok"><div class="judul"><h2>Koreksi collect sebelumnya</h2></div>'+
+    '<p class="ket">Untuk memperbaiki nilai yang salah catat. Selama belum disetor ke bank, '+
+    'GC bisa memperbaiki sendiri. Setelah disetor, hanya admin, dan alasannya tercatat.</p>';
+  if(!p.length) return h+'<div class="kosongan">Belum ada collect tersimpan.</div></div>';
+  h+='<div class="bar"><div style="min-width:260px;flex:1"><label for="kPilih">Peristiwa collect</label>'+
+     '<select id="kPilih" onchange="gambarKoreksi()"><option value="">— pilih —</option>'+
+     p.map(x=>'<option value="'+x.kunci+'">'+x.unit+' · jemput '+tglTeks(x.tglCollect)+
+       ' · '+rp(x.nilai)+(x.tglSetor?' · sudah disetor '+tglTeks(x.tglSetor):' · belum disetor')+
+       '</option>').join("")+'</select></div></div>';
+  h+='<div id="isiKoreksi"></div></div>';
+  return h;
+}
+function gambarKoreksi(){
+  const k=document.getElementById("kPilih").value;
+  const box=document.getElementById("isiKoreksi");
+  if(!k){box.innerHTML="";return;}
+  const [unit,tglC]=k.split("|");
+  const rows=DATA.db.filter(r=>r.unit===unit&&r.tglCollect===tglC&&(+r.totalCollect||0)>0);
+  const lain=(DATA.lain||[]).filter(x=>x.unit===unit&&x.tglCollect===tglC);
+  const sudah=rows.some(r=>r.tglSetor)||lain.some(x=>x.tglSetor);
+  const adm=DATA.aku&&DATA.aku.peran==="ADMIN";
+  let h='<div class="gulir"><table><thead><tr><th>Tanggal omset</th>'+
+        '<th class="kanan">Omset sistem</th><th class="kanan">Total collect</th></tr></thead><tbody>';
+  rows.forEach(r=>{
+    const sis=DATA.db.filter(q=>q.unit===unit&&q.tgl===r.tgl&&q.tglCollect===tglC)
+                     .reduce((s,q)=>s+total(q),0);
+    h+='<tr><td>'+tglTeks(r.tgl)+'</td><td class="kanan num">'+rp(sis)+'</td>'+
+       '<td class="kanan"><input class="num" inputmode="numeric" data-kor="'+r.tgl+
+       '" value="'+fmtRibu(r.totalCollect)+'" oninput="rapikan(this)"'+
+       (sudah&&!adm?" disabled":"")+'></td></tr>';
+  });
+  lain.forEach(x=>{
+    h+='<tr><td>'+tglTeks(x.tgl)+' <span class="rinci">'+namaJenis(x.jenis)+' · '+x.referensi+
+       '</span></td><td class="kanan num">'+rp(x.nilai)+'</td>'+
+       '<td class="kanan"><input class="num" inputmode="numeric" data-korl="'+x.id+
+       '" value="'+fmtRibu(x.totalCollect)+'" oninput="rapikan(this)"'+
+       (sudah&&!adm?" disabled":"")+'></td></tr>';
+  });
+  h+='</tbody></table></div>';
+  const tglS=(rows[0]&&rows[0].tglSetor)||(lain[0]&&lain[0].tglSetor)||"";
+  h+='<div class="bar" style="align-items:flex-end">'+
+     '<div><label>Tanggal setor</label><input type="date" id="kSetor" value="'+tglS+'"'+
+       (sudah&&!adm?" disabled":"")+'></div>'+
+     '<div style="flex:2;min-width:220px"><label>Alasan koreksi (wajib)</label>'+
+       '<input type="text" id="kAlasan" placeholder="mis. slip bank berbeda, uang kurang saat dihitung ulang"'+
+       (sudah&&!adm?" disabled":"")+'></div>'+
+     '<button class="aksi" onclick="simpanKoreksi()"'+(sudah&&!adm?" disabled":"")+'>Simpan koreksi</button>'+
+     '<span class="pesan" id="pesanKoreksi"></span></div>';
+  if(sudah&&!adm) h+='<p class="catatan">Sudah disetor ke bank. Hanya admin yang bisa memperbaikinya. '+
+     'Hubungi pemilik berkas.</p>';
+  else if(sudah) h+='<p class="catatan">Sudah disetor ke bank. Perubahan akan mengubah angka yang '+
+     'mungkin sudah masuk JV, dan tercatat di LOG lengkap dengan alasannya.</p>';
+  box.innerHTML=h;
+}
+async function simpanKoreksi(){
+  const k=document.getElementById("kPilih").value;
+  const p=document.getElementById("pesanKoreksi");
+  if(!k)return;
+  const [unit,tglC]=k.split("|");
+  const alasan=(document.getElementById("kAlasan").value||"").trim();
+  if(!alasan){p.className="pesan gagal";p.textContent="Alasan koreksi wajib diisi.";return;}
+  const baris=[],lain=[];
+  document.querySelectorAll("#isiKoreksi [data-kor]").forEach(i=>
+    baris.push({tgl:i.dataset.kor,terima:angkaDari(i.value)}));
+  document.querySelectorAll("#isiKoreksi [data-korl]").forEach(i=>
+    lain.push({id:i.dataset.korl,terima:angkaDari(i.value)}));
+  const tglSetor=document.getElementById("kSetor").value||"";
+  try{
+    if(adaServer) await panggil("koreksiCollect",{unit,tglCollect:tglC,tglSetor,alasan,baris,lain});
+    baris.forEach(b=>DATA.db.filter(r=>r.unit===unit&&r.tgl===b.tgl&&r.tglCollect===tglC)
+      .forEach((r,i)=>{if(i===0)r.totalCollect=b.terima; r.tglSetor=tglSetor;}));
+    lain.forEach(x=>{const l=DATA.lain.find(y=>y.id===x.id);
+      if(l){l.totalCollect=x.terima;l.tglSetor=tglSetor;}});
+    p.className="pesan";p.textContent=adaServer?"Koreksi tersimpan.":"Tersimpan sementara.";
+    gambarCollect();gambarPosisi();
+  }catch(e){p.className="pesan gagal";p.textContent="Gagal. "+e.message;}
+}
+
+/* ================= EXPORT =================
+   JV  : .xls, tata letak direplikasi persis dari berkas VHP.
+         Semua isi mulai kolom B. Baris 11 sengaja dikosongkan.
+   RPT : .xlsx lewat ExcelJS, karena SheetJS versi gratis tidak bisa
+         menulis warna, garis, maupun formula ke .xls.
+   Satu berkas untuk satu tanggal setor.
+   ========================================================= */
 const BULAN_PANJANG=["JANUARI","FEBRUARI","MARET","APRIL","MEI","JUNI","JULI",
                      "AGUSTUS","SEPTEMBER","OKTOBER","NOVEMBER","DESEMBER"];
+const BULAN_PENDEK=["Jan","Feb","Mar","Apr","Mei","Jun","Jul","Agu","Sep","Okt","Nov","Des"];
+
+const FMT_AKUN='_-* #,##0_-;\\-* #,##0_-;_-* "-"_-;_-@_-';
+const FMT_RP='"Rp"#,##0';
+const FMT_TGL_DESKTOP='dd\\-mm\\-yy';
+const FMT_TGL_CLOUD='mm/dd/yyyy';
+const FMT_TGL_BARIS='dd-mmm-yyyy';
+const FMT_TGL_SETOR='[$-C09]dd-mmm-yy;@';
+const FMT_TGL_PANJANG='[$-F800]dddd", "mmmm dd", "yyyy';
+const BIRU="FF1F4E78", KUNING="FFFFF2CC";
+const GARIS={top:{style:"thin"},left:{style:"thin"},bottom:{style:"thin"},right:{style:"thin"}};
+
+const KOL=i=>{let s="",n=i;do{s=String.fromCharCode(65+(n%26))+s;n=Math.floor(n/26)-1;}while(n>=0);return s;};
+const serialTgl=t=>Math.round(new Date(t+"T00:00:00Z").getTime()/864e5)+25569;
+const tglUTC=t=>new Date(Date.UTC(+t.slice(0,4),+t.slice(5,7)-1,+t.slice(8,10)));
+const fmtID=t=>{const d=tglUTC(t);
+  return String(d.getUTCDate()).padStart(2,"0")+"/"+String(d.getUTCMonth()+1).padStart(2,"0")+"/"+d.getUTCFullYear();};
+const fmtPendek=t=>{const d=tglUTC(t);
+  return d.getUTCDate()+" "+BULAN_PENDEK[d.getUTCMonth()]+" "+d.getUTCFullYear();};
+
 /* Kode JV diturunkan dari bulan yang dipilih: dua digit bulan diikuti dua
-   digit tahun. Pola lama menempelkan angka nol di depan kode tiga digit,
-   yang akan menghasilkan lima digit mulai Oktober. */
-function kodeDari(bulan){
-  const th=bulan.slice(2,4), bl=bulan.slice(5,7);
-  return bl+th;
-}
-function periodeDari(bulan){
-  return BULAN_PANJANG[+bulan.slice(5,7)-1]+"-"+bulan.slice(0,4);
-}
+   digit tahun. Urutan tiga digit mengikuti posisi tanggal setor di dalam
+   bulan itu, jadi setoran yang diinput mundur akan menggeser nomor
+   sesudahnya. Nomor tiap tanggal ditampilkan di tabel sebelum diunduh. */
+function kodeDari(bulan){ return bulan.slice(5,7)+bulan.slice(2,4); }
+function periodeDari(bulan){ return BULAN_PANJANG[+bulan.slice(5,7)-1]+"-"+bulan.slice(0,4); }
 function isiPeriode(){
   const b=document.getElementById("eBulan").value;
   if(!/^\d{4}-\d{2}$/.test(b))return;
@@ -938,178 +1076,273 @@ function pratinjauJV(){
   const k=document.getElementById("eKode").value.trim();
   const el=document.getElementById("ePratinjau");
   if(el)el.textContent=k?"BK-GC"+k+"-001":"—";
+  if(!document.getElementById("panExport").hidden)gambarExport();
 }
 function tglSetorBulan(kode,bulan){
   const a=DATA.db.filter(r=>r.unit===kode&&r.tglSetor&&r.tglSetor.slice(0,7)===bulan).map(r=>r.tglSetor);
   const b=(DATA.lain||[]).filter(x=>x.unit===kode&&x.tglSetor&&x.tglSetor.slice(0,7)===bulan).map(x=>x.tglSetor);
   return [...new Set(a.concat(b))].sort();
 }
+function nomorJV(kode,bulan,t){
+  const kodeJV=(document.getElementById("eKode").value||kodeDari(bulan)).trim();
+  const idx=tglSetorBulan(kode,bulan).indexOf(t);
+  return "BK-GC"+kodeJV+"-"+String(idx+1).padStart(3,"0");
+}
+
+/* Merangkai data satu tanggal setor: per tanggal omset, per outlet,
+   urut mengikuti URUT_OUTLET di MASTER_UNIT. */
+function dataSetor(kode,t){
+  const u=unitUnik().find(x=>x.kode===kode);
+  const rows=DATA.db.filter(r=>r.unit===kode&&r.tglSetor===t);
+  const tgl=[...new Set(rows.map(r=>r.tgl))].sort();
+  const hari=tgl.map(d=>{
+    const rr=rows.filter(r=>r.tgl===d);
+    return {tgl:d,
+      terima:rr.reduce((s,r)=>s+(+r.totalCollect||0),0),
+      per:u.outlet.map(o=>{
+        const r=rr.find(x=>x.outlet===o.kode)||{};
+        return {label:o.kode, bfast:+r.bfast||0, lunch:+r.lunch||0, dinner:+r.dinner||0,
+                nilai:(+r.bfast||0)+(+r.lunch||0)+(+r.dinner||0)};})};
+  });
+  const lain=(DATA.lain||[]).filter(x=>x.unit===kode&&x.tglSetor===t).map(x=>{
+    const j=(DATA.jenis||[]).find(a=>a[0]===x.jenis)||[];
+    return {tgl:x.tgl, nama:j[1]||"Advance deposit", akun:j[2]||"",
+            nilai:+x.totalCollect||0, referensi:x.referensi||""};});
+  return {u,hari,lain};
+}
+
 function gambarExport(){
   const kode=document.getElementById("eUnit").value,bulan=document.getElementById("eBulan").value;
   if(!document.getElementById("eKode").value)isiPeriode();
   const tgl=tglSetorBulan(kode,bulan);
   if(!tgl.length){document.getElementById("isiExport").innerHTML=
     '<div class="kosongan">Belum ada setoran untuk unit dan bulan itu.</div>';return;}
-  let h='<div class="gulir"><table><thead><tr><th style="width:40px"></th><th>Tanggal setor</th>'+
-        '<th class="kanan">Nilai</th><th class="kanan">Baris omset</th></tr></thead><tbody>';
+  let h='<div class="gulir"><table><thead><tr><th>Tanggal setor</th><th>Nomor JV</th>'+
+        '<th class="kanan">Omset</th><th class="kanan">Deposit</th>'+
+        '<th class="kanan">Hari omset</th><th>Berkas</th></tr></thead><tbody>';
   tgl.forEach(t=>{
-    const b=DATA.db.filter(r=>r.unit===kode&&r.tglSetor===t);
-    h+='<tr><td><input type="checkbox" checked data-ex="'+t+'"></td><td>'+tglTeks(t)+'</td>'+
-       '<td class="kanan num">'+rp(b.reduce((s,r)=>s+(+r.totalCollect||0),0))+'</td>'+
-       '<td class="kanan num">'+b.length+'</td></tr>';
+    const d=dataSetor(kode,t);
+    const omset=d.hari.reduce((s,x)=>s+x.terima,0);
+    const dep=d.lain.reduce((s,x)=>s+x.nilai,0);
+    h+='<tr><td>'+tglTeks(t)+'</td><td class="num">'+nomorJV(kode,bulan,t)+'</td>'+
+       '<td class="kanan num">'+rp(omset)+'</td>'+
+       '<td class="kanan num">'+(dep?rp(dep):"—")+'</td>'+
+       '<td class="kanan num">'+d.hari.length+'</td>'+
+       '<td><button class="halus" onclick="unduhJV(\''+kode+'\',\''+t+'\')">JV .xls</button> '+
+       '<button class="halus" onclick="unduhReport(\''+kode+'\',\''+t+'\')">Report .xlsx</button></td></tr>';
   });
-  h+='</tbody></table></div><div class="bar">'+
-     '<button class="aksi" onclick="unduhJV()">Download JV (.xls)</button>'+
-     '<button class="halus" onclick="cetakReport()">Cetak Report (PDF)</button>'+
-     '<span class="pesan" id="pesanExport"></span></div>'+
-     '<p class="catatan">Satu file berisi satu sheet per tanggal setor. '+
-     'File dibuat ulang tiap kali diunduh, jadi isinya selalu ikut data terbaru. '+
-     'Period dan kode JV terisi sendiri dari bulan yang dipilih, dan masih bisa diubah di sini '+
-     'kalau penomoran unit itu berbeda.</p>';
+  h+='</tbody></table></div><div class="bar"><span class="pesan" id="pesanExport"></span></div>'+
+     '<p class="catatan">Satu berkas untuk satu tanggal setor. JV memakai .xls karena itu yang '+
+     'dibaca VHP; Report memakai .xlsx supaya warna, garis, dan formulanya ikut terbawa. '+
+     'Nomor JV di tabel ini adalah nomor yang akan tertulis di berkas.</p>';
   document.getElementById("isiExport").innerHTML=h;
 }
-function tglPilihExport(){
-  return [...document.querySelectorAll("#isiExport [data-ex]")].filter(c=>c.checked).map(c=>c.dataset.ex);
-}
-function unduhJV(){
-  const kode=document.getElementById("eUnit").value,bulan=document.getElementById("eBulan").value;
-  const u=unitUnik().find(x=>x.kode===kode),tgl=tglPilihExport();
+function pesanEx(teks,gagal){
   const p=document.getElementById("pesanExport");
-  if(!tgl.length){p.className="pesan gagal";p.textContent="Pilih minimal satu tanggal.";return;}
-  const kodeJV=(document.getElementById("eKode").value||kodeDari(bulan)).trim();
-  const periodeJV=(document.getElementById("ePeriode").value||periodeDari(bulan)).trim();
-  if(!kodeJV){p.className="pesan gagal";p.textContent="Kode JV belum diisi.";return;}
-  const semuaTgl=tglSetorBulan(kode,bulan);
-  const wb=XLSX.utils.book_new();
-  tgl.forEach(t=>{
-    const idx=semuaTgl.indexOf(t);
-    const cloud=u.varian==="VHP_CLOUD";
-    const aoa=[];
-    const jvNo="BK-GC"+kodeJV+"-"+String(idx+1).padStart(3,"0");
-    if(cloud){
-      aoa.push(["Version 1.0.0"]);
-      aoa.push([u.kode+"\nJOURNAL VOUCHER"]);
-      aoa.push([]);
-      aoa.push([periodeJV,periodeJV,"","Journal Date",fmtUS(t)]);
-      aoa.push([jvNo,jvNo]);
-      aoa.push(["CASH SALES "+u.kode,"CASH SALES "+u.kode]);
-      aoa.push([]);
-      aoa.push(["Account","Description","Debit","Credit","Remarks"]);
-    }else{
-      aoa.push([]);aoa.push(["JOURNAL VOUCHER"]);aoa.push([]);
-      aoa.push(["Period     : "+periodeJV,"","","Journal Date",fmtID(t)]);
-      aoa.push(["No. JV     : "+jvNo]);
-      aoa.push(["Name JV : CASH SALES "+u.kode]);
-      aoa.push([]);
-      aoa.push(["Description","Account","Debit","Credit","Remarks"]);
-    }
-    const hari=[...new Set(DATA.db.filter(r=>r.unit===kode&&r.tglSetor===t).map(r=>r.tgl))].sort();
-    hari.forEach(d=>{
-      const rows=DATA.db.filter(r=>r.unit===kode&&r.tgl===d&&r.tglSetor===t);
-      const tot=rows.reduce((s,r)=>s+total(r),0);
-      const terima=rows.reduce((s,r)=>s+(+r.totalCollect||0),0);
-      const vr=terima-tot;
-      const desc="CASH SALES "+u.kode+" "+fmtID(d);
-      const baris=(a,b,deb,kre)=>cloud?[b,a,deb,kre,desc]:[a,b,deb,kre,desc];
-      aoa.push(baris(u.namaBank,u.akunBank,terima,""));
-      if(u.varian==="PLS"){
-        u.outlet.forEach(o=>{
-          const sub=rows.filter(r=>r.outlet===o.kode).reduce((s,r)=>s+total(r),0);
-          const dd=desc.replace("CASH SALES ","CASH SALES "+o.kode+" ");
-          aoa.push(cloud?[u.akunClr,"CASH SALES CLEAREANCE","",sub,dd]
-                        :["CASH SALES CLEAREANCE",u.akunClr,"",sub,dd]);
-        });
-      }else aoa.push(baris("CASH SALES CLEAREANCE",u.akunClr,"",tot));
-      if(vr!==0) aoa.push(baris("OVERAGES/SHORTAGES",u.akunOvr,vr<0?Math.abs(vr):"",vr>0?vr:""));
-    });
-    // transaksi bukan omset pada tanggal setor ini
-    (DATA.lain||[]).filter(x=>x.unit===kode&&x.tglSetor===t).forEach(x=>{
-      const j=(DATA.jenis||[]).find(a=>a[0]===x.jenis);
-      const akun=j?j[2]:"", nm=j?j[1]:"DEPOSIT";
-      const dsc=nm.toUpperCase()+" "+u.kode+" "+fmtID(x.tgl)+" — "+x.referensi;
-      aoa.push(cloud?[u.akunBank,u.namaBank,x.totalCollect,"",dsc]
-                    :[u.namaBank,u.akunBank,x.totalCollect,"",dsc]);
-      aoa.push(cloud?[akun,nm.toUpperCase(),"",x.totalCollect,dsc]
-                    :[nm.toUpperCase(),akun,"",x.totalCollect,dsc]);
-    });
-    const ws=XLSX.utils.aoa_to_sheet(aoa);
-    ws["!cols"]=[{wch:26},{wch:20},{wch:16},{wch:16},{wch:26}];
-    if(cloud)ws["!merges"]=[{s:{r:1,c:0},e:{r:1,c:4}}];
-    else ws["!merges"]=[{s:{r:1,c:0},e:{r:1,c:4}}];
-    XLSX.utils.book_append_sheet(wb,ws,String(new Date(t+"T00:00:00").getDate()));
-  });
-  XLSX.writeFile(wb,"JV_"+kode+"_"+bulan.slice(2,4)+bulan.slice(5,7)+".xls",{bookType:"xls"});
-  p.className="pesan";p.textContent="File JV dibuat, "+tgl.length+" sheet, nomor BK-GC"+kodeJV+".";
+  if(p){p.className="pesan"+(gagal?" gagal":"");p.textContent=teks;}
 }
-const fmtID=t=>{const d=new Date(t+"T00:00:00");
-  return String(d.getDate()).padStart(2,"0")+"/"+String(d.getMonth()+1).padStart(2,"0")+"/"+d.getFullYear();};
-const fmtUS=t=>{const d=new Date(t+"T00:00:00");
-  return String(d.getMonth()+1).padStart(2,"0")+"/"+String(d.getDate()).padStart(2,"0")+"/"+d.getFullYear();};
 
-function cetakReport(){
-  const kode=document.getElementById("eUnit").value;
-  const u=unitUnik().find(x=>x.kode===kode),tgl=tglPilihExport();
-  const p=document.getElementById("pesanExport");
-  if(!tgl.length){p.className="pesan gagal";p.textContent="Pilih minimal satu tanggal.";return;}
-  let h="";
-  tgl.forEach((t,i)=>{
-    const rows=DATA.db.filter(r=>r.unit===kode&&r.tglSetor===t);
-    const hari=[...new Set(rows.map(r=>r.tgl))].sort();
-    const totTerima=rows.reduce((s,r)=>s+(+r.totalCollect||0),0);
-    h+='<div style="page-break-after:'+(i<tgl.length-1?"always":"auto")+';padding:18mm 14mm;'+
-       'font-family:Archivo,sans-serif;color:#000">';
-    h+='<div style="text-align:center;font-weight:700;font-size:15px;margin-bottom:14px">'+
-       "GENERAL CASHIER'S DAILY REMITTANCE &amp; CASH DEPOSIT REPORT</div>";
-    h+='<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px">'+
-       '<b>A. CASH REMITTANCE</b><span><b>Tgl Setor :</b> '+fmtID(t)+'</span></div>';
-    h+='<div style="font-size:11px;font-style:italic;color:#555;margin-bottom:8px">Omset tgl : '+
-       hari.map(fmtID).join(", ")+'</div>';
-    h+='<table style="width:100%;border-collapse:collapse;font-size:11px">'+
-       '<tr style="background:#1F4E78;color:#fff"><th style="border:1px solid #999;padding:4px">DATE</th>'+
-       '<th style="border:1px solid #999;padding:4px">OUTLET</th>'+
-       '<th style="border:1px solid #999;padding:4px">BREAKFAST</th>'+
-       '<th style="border:1px solid #999;padding:4px">LUNCH</th>'+
-       '<th style="border:1px solid #999;padding:4px">DINNER</th>'+
-       '<th style="border:1px solid #999;padding:4px">NET CASH</th>'+
-       '<th style="border:1px solid #999;padding:4px">AMOUNT REMITTED TO GC</th>'+
-       '<th style="border:1px solid #999;padding:4px">(SHORT) OVERAGE</th></tr>';
-    let tb=0,tl=0,td=0,tn=0,tr_=0;
-    hari.forEach(d=>{
-      const rr=rows.filter(r=>r.tgl===d);
-      const rem=rr.reduce((s,r)=>s+(+r.totalCollect||0),0);
-      rr.forEach((r,j)=>{
-        const net=total(r),remi=j===0?rem:0;
-        tb+=+r.bfast||0;tl+=+r.lunch||0;td+=+r.dinner||0;tn+=net;tr_+=remi;
-        const nm=(DATA.master.find(m=>m[0]===r.unit&&m[2]===r.outlet)||[])[3]||r.outlet;
-        h+='<tr><td style="border:1px solid #ccc;padding:3px">'+(j===0?fmtID(d):"")+'</td>'+
-           '<td style="border:1px solid #ccc;padding:3px">'+nm+'</td>'+
-           ['bfast','lunch','dinner'].map(f=>'<td style="border:1px solid #ccc;padding:3px;text-align:right">'+
-             rp(r[f]||0)+'</td>').join("")+
-           '<td style="border:1px solid #ccc;padding:3px;text-align:right">'+rp(net)+'</td>'+
-           '<td style="border:1px solid #ccc;padding:3px;text-align:right">'+rp(remi)+'</td>'+
-           '<td style="border:1px solid #ccc;padding:3px;text-align:right">'+rp(remi-net)+'</td></tr>';
-      });
-    });
-    h+='<tr style="background:#FFF2CC;font-weight:700"><td style="border:1px solid #999;padding:3px" colspan="2">TOTAL</td>'+
-       [tb,tl,td,tn,tr_,tr_-tn].map(v=>'<td style="border:1px solid #999;padding:3px;text-align:right">'+rp(v)+'</td>').join("")+
-       '</tr></table>';
-    h+='<div style="font-size:12px;margin-top:10px"><b>Total Amount</b> &nbsp; Rp'+rp(totTerima)+'</div>';
-    h+='<div style="font-size:11px;color:#555"><b>Amount In Words</b> &nbsp; '+terbilang(totTerima)+' Rupiah</div>';
-    h+='<div style="font-size:12px;margin-top:14px"><b>B. CASH DEPOSITED</b></div>';
-    [["Cash Deposited In","BCA"],["Name",DATA.config.NAMA_PT||""],["Bank Account",u.namaBank],
-     ["Deposit Date",fmtID(t)],["Amount Deposit","Rp"+rp(totTerima)],
-     ["Amount In Words",terbilang(totTerima)+" Rupiah"]].forEach(x=>{
-      h+='<div style="font-size:11px"><span style="display:inline-block;width:130px">'+x[0]+
-         '</span><b>'+x[1]+'</b></div>';});
-    h+='<div style="display:flex;justify-content:space-between;margin-top:34px;font-size:11px">'+
-       '<div>Prepared by,<div style="height:46px"></div>General Cashier</div>'+
-       '<div>Verified by,<div style="height:46px"></div>Income Auditor</div>'+
-       '<div>Approved by,<div style="height:46px"></div>Financial Controller</div></div>';
-    h+='</div>';
+/* ---------- JV .xls ---------- */
+function barisJurnal(u,hari,lain){
+  const banyak=u.outlet.length>1, out=[];
+  hari.forEach(h=>{
+    const sistem=h.per.reduce((s,p)=>s+p.nilai,0);
+    const vr=h.terima-sistem;
+    const rmk="CASH SALES "+u.kode+" "+fmtID(h.tgl);
+    out.push({desc:u.namaBank,akun:u.akunBank,debit:h.terima,kredit:"",remark:rmk});
+    h.per.forEach(p=>out.push({desc:"CASH SALES CLEAREANCE",akun:u.akunClr,debit:"",kredit:p.nilai,
+      remark:banyak?"CASH SALES "+p.label+" "+u.kode+" "+fmtID(h.tgl):rmk}));
+    if(vr!==0)out.push({desc:"OVERAGES/SHORTAGES",akun:u.akunOvr,
+      debit:vr<0?Math.abs(vr):"",kredit:vr>0?vr:"",remark:rmk});
   });
-  document.getElementById("cetak").innerHTML=h;
-  window.print();
+  (lain||[]).forEach(x=>{
+    const rmk=x.nama.toUpperCase()+" "+u.kode+" "+fmtID(x.tgl)+" - "+x.referensi;
+    out.push({desc:u.namaBank,akun:u.akunBank,debit:x.nilai,kredit:"",remark:rmk});
+    out.push({desc:x.nama.toUpperCase(),akun:x.akun,debit:"",kredit:x.nilai,remark:rmk});
+  });
+  return out;
 }
+function unduhJV(kode,t){
+  const bulan=document.getElementById("eBulan").value;
+  const {u,hari,lain}=dataSetor(kode,t);
+  if(!hari.length&&!lain.length){pesanEx("Tidak ada data untuk tanggal itu.",1);return;}
+  const periode=(document.getElementById("ePeriode").value||periodeDari(bulan)).trim();
+  const noJV=nomorJV(kode,bulan,t);
+  const cloud=u.varian==="VHP_CLOUD";
+  const ws={};
+  const S=(a,v)=>{ws[a]={t:"s",v:String(v)};};
+  const N=(a,v,z)=>{ws[a]={t:"n",v:Number(v)};if(z)ws[a].z=z;};
+
+  if(cloud){
+    S("B2","Version 1.0.0");
+    S("B3",u.kode+"\nJOURNAL VOUCHER");
+    S("B6",periode); S("C6",periode);
+    S("E6","Journal Date"); N("F6",serialTgl(t),FMT_TGL_CLOUD);
+    S("B7",noJV); S("C7",noJV);
+    S("B8","CASH SALES "+u.kode); S("C8","CASH SALES "+u.kode);
+    ["Account","Description","Debit","Credit","Remarks"].forEach((x,i)=>S(KOL(1+i)+"10",x));
+  }else{
+    S("B4","JOURNAL VOUCHER");
+    S("B6","Period     : "+periode);
+    S("E6","Journal Date"); N("F6",serialTgl(t),FMT_TGL_DESKTOP);
+    S("B7","No. JV     : "+noJV);
+    S("B8","Name JV : CASH SALES "+u.kode);
+    ["Description","Account","Debit","Credit","Remarks"].forEach((x,i)=>S(KOL(1+i)+"10",x));
+  }
+  let r=12,tDeb=0,tKre=0;
+  barisJurnal(u,hari,lain).forEach(b=>{
+    if(cloud){S("B"+r,b.akun);S("C"+r,b.desc);}else{S("B"+r,b.desc);S("C"+r,b.akun);}
+    if(b.debit!==""){N("D"+r,b.debit,FMT_AKUN);tDeb+=+b.debit;}
+    if(b.kredit!==""){N("E"+r,b.kredit,FMT_AKUN);tKre+=+b.kredit;}
+    S("F"+r,b.remark); r++;
+  });
+  S("C"+r,"TOTAL"); N("D"+r,tDeb,FMT_AKUN); N("E"+r,tKre,FMT_AKUN);
+  S("C"+(r+1),"Selisih (harus 0)"); N("E"+(r+1),tKre-tDeb,FMT_AKUN);
+  ws["!ref"]="A1:F"+(r+1);
+  ws["!merges"]=[cloud?{s:{r:2,c:1},e:{r:2,c:5}}:{s:{r:3,c:1},e:{r:3,c:5}}];
+
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,String(tglUTC(t).getUTCDate()));
+  XLSX.writeFile(wb,"JV_"+kode+"_"+t.replace(/-/g,"")+".xls",{bookType:"xls"});
+  pesanEx("JV "+noJV+" dibuat"+(tKre!==tDeb?" — PERHATIAN, debit dan kredit tidak seimbang.":"."),tKre!==tDeb);
+}
+
+/* ---------- Report .xlsx ---------- */
+let EXCELJS_SIAP=null;
+function muatExcelJS(){
+  if(window.ExcelJS)return Promise.resolve();
+  if(EXCELJS_SIAP)return EXCELJS_SIAP;
+  const sumber=["https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js",
+                "https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"];
+  EXCELJS_SIAP=new Promise((ok,gagal)=>{
+    let i=0;
+    const coba=()=>{
+      if(i>=sumber.length){gagal(new Error("Pustaka Excel tidak bisa dimuat."));return;}
+      const s=document.createElement("script");
+      s.src=sumber[i++]; s.onload=()=>ok(); s.onerror=coba;
+      document.head.appendChild(s);
+    };
+    coba();
+  });
+  return EXCELJS_SIAP;
+}
+async function unduhReport(kode,t){
+  const {u,hari,lain}=dataSetor(kode,t);
+  if(!hari.length&&!lain.length){pesanEx("Tidak ada data untuk tanggal itu.",1);return;}
+  pesanEx("Menyiapkan Report…");
+  try{ await muatExcelJS(); }
+  catch(e){ pesanEx("Gagal memuat pustaka Excel. Periksa sambungan internet.",1); return; }
+
+  const wb=new ExcelJS.Workbook();
+  const ws=wb.addWorksheet("Report");
+  const nOut=u.outlet.length, multi=nOut>1;
+  const cShift=1+(multi?0:1), cNet=cShift+3*nOut, cRem=cNet+1, cOvr=cNet+2, cAkhir=cOvr;
+  const set=(a,v,o)=>{
+    const c=ws.getCell(a); c.value=v; o=o||{};
+    if(o.z)c.numFmt=o.z;
+    if(o.b)c.font=Object.assign({bold:true},o.font||{}); else if(o.font)c.font=o.font;
+    if(o.fill)c.fill={type:"pattern",pattern:"solid",fgColor:{argb:o.fill}};
+    if(o.garis)c.border=GARIS;
+    if(o.rata)c.alignment={horizontal:o.rata,vertical:"middle",wrapText:!!o.wrap};
+    return c;
+  };
+  for(let c=0;c<=cAkhir;c++){
+    const cell=ws.getCell(KOL(c)+"2");
+    cell.alignment={horizontal:"centerContinuous"}; cell.font={bold:true,size:12};
+  }
+  ws.getCell("A2").value="GENERAL CASHIER'S DAILY REMITTANCE & CASH DEPOSIT REPORT";
+  set("A4","A. CASH REMITTANCE",{b:1});
+  set(KOL(cAkhir-1)+"4","Tgl Setor :",{b:1,rata:"right"});
+  set(KOL(cAkhir)+"4",tglUTC(t),{z:FMT_TGL_SETOR});
+  set("A5","Omset tgl :",{font:{italic:true,size:9}});
+  set("B5",hari.map(x=>fmtPendek(x.tgl)).join(", "),{font:{italic:true,size:9}});
+  ws.mergeCells("B5:"+KOL(cAkhir-2)+"5");
+
+  const kepala={fill:BIRU,font:{bold:true,color:{argb:"FFFFFFFF"},size:9},garis:1,rata:"center",wrap:true};
+  set("A7","DATE",kepala); ws.mergeCells("A7:A8");
+  if(multi){
+    u.outlet.forEach((o,i)=>{
+      const c0=cShift+3*i;
+      set(KOL(c0)+"7",o.kode,kepala);
+      ws.mergeCells(KOL(c0)+"7:"+KOL(c0+2)+"7");
+      ["Breakfast","Lunch","Dinner"].forEach((s,j)=>set(KOL(c0+j)+"8",s,kepala));
+    });
+  }else{
+    set("B7","OUTLET",kepala); ws.mergeCells("B7:B8");
+    set(KOL(cShift)+"7","OUTLET CASHIER SHIFT",kepala);
+    ws.mergeCells(KOL(cShift)+"7:"+KOL(cShift+2)+"7");
+    ["Breakfast","Lunch","Dinner"].forEach((s,j)=>set(KOL(cShift+j)+"8",s,kepala));
+  }
+  [[cNet,"NET CASH"],[cRem,"AMOUNT REMITTED TO GC"],[cOvr,"(SHORT) OVERAGE"]].forEach(x=>{
+    set(KOL(x[0])+"7",x[1],kepala); ws.mergeCells(KOL(x[0])+"7:"+KOL(x[0])+"8");
+  });
+
+  const r0=9;
+  hari.forEach((h,i)=>{
+    const r=r0+i;
+    set("A"+r,tglUTC(h.tgl),{z:FMT_TGL_BARIS,garis:1});
+    if(!multi)set("B"+r,u.kode,{garis:1});
+    u.outlet.forEach((o,k)=>{
+      const p=h.per[k]||{}, c0=cShift+3*k;
+      [+p.bfast||0,+p.lunch||0,+p.dinner||0].forEach((v,j)=>set(KOL(c0+j)+r,v,{z:FMT_AKUN,garis:1}));
+    });
+    set(KOL(cNet)+r,{formula:"SUM("+KOL(cShift)+r+":"+KOL(cNet-1)+r+")"},{z:FMT_AKUN,garis:1});
+    set(KOL(cRem)+r,h.terima,{z:FMT_AKUN,garis:1});
+    set(KOL(cOvr)+r,{formula:KOL(cRem)+r+"-"+KOL(cNet)+r},{z:FMT_AKUN,garis:1});
+  });
+
+  const rT=r0+hari.length, total={b:1,fill:KUNING,garis:1};
+  set("A"+rT,"TOTAL",total);
+  if(!multi)set("B"+rT,"",total);
+  for(let c=cShift;c<=cOvr;c++)
+    set(KOL(c)+rT,{formula:"SUM("+KOL(c)+r0+":"+KOL(c)+(rT-1)+")"},Object.assign({z:FMT_AKUN},total));
+
+  const totOmset=hari.reduce((s,x)=>s+x.terima,0);
+  const totLain=lain.reduce((s,x)=>s+x.nilai,0);
+  set("A"+(rT+1),"Total Amount",{b:1});
+  set("B"+(rT+1),{formula:KOL(cRem)+rT},{z:FMT_RP,b:1});
+  ws.mergeCells("B"+(rT+1)+":"+KOL(cAkhir)+(rT+1));
+  set("A"+(rT+2),"Amount In Words",{b:1});
+  set("B"+(rT+2),terbilang(totOmset)+" Rupiah",{font:{italic:true}});
+  ws.mergeCells("B"+(rT+2)+":"+KOL(cAkhir)+(rT+2));
+
+  const cfg=DATA.config||{};
+  const rB=rT+4;
+  set("A"+rB,"B. CASH DEPOSITED",{b:1});
+  [["Cash Deposited At",cfg.DEPOSIT_AT||""],["Cash Deposited In",cfg.DEPOSIT_IN||""],
+   ["Cash Deposited By",cfg.DEPOSIT_BY||""],["Name",cfg.NAMA_PT||""],
+   ["Bank Account",u.namaBank]].forEach((x,i)=>{
+    set("A"+(rB+1+i),x[0]); set("B"+(rB+1+i),x[1],{b:1});});
+  const rD=rB+6;
+  set("A"+rD,"Deposit Date"); set("B"+rD,tglUTC(t),{z:FMT_TGL_PANJANG,b:1});
+  set("A"+(rD+1),"Amount Omzet");   set("B"+(rD+1),totOmset,{z:FMT_RP,b:1});
+  set("A"+(rD+2),"Amount Deposit"); set("B"+(rD+2),totLain,{z:FMT_RP,b:1});
+  set("A"+(rD+3),"Total Amount");   set("B"+(rD+3),{formula:"B"+(rD+1)+"+B"+(rD+2)},{z:FMT_RP,b:1});
+  set("A"+(rD+4),"Amount In Words");
+  set("B"+(rD+4),terbilang(totOmset+totLain)+" Rupiah",{font:{italic:true}});
+  ws.mergeCells("B"+(rD+4)+":"+KOL(cAkhir)+(rD+4));
+
+  const rS=rD+7, cApr=cAkhir-1;
+  set("A"+rS,"Prepared by,"); set("D"+rS,"Verified by,"); set(KOL(cApr)+rS,"Approved by,");
+  set("A"+(rS+6),"General Cashier",{b:1});
+  set("D"+(rS+6),"Income Auditor",{b:1});
+  set(KOL(cApr)+(rS+6),"Financial Controller",{b:1});
+
+  ws.getColumn(1).width=13;
+  for(let c=1;c<=cAkhir;c++)ws.getColumn(c+1).width=(c===cRem?16:13);
+  ws.getRow(7).height=30;
+  ws.pageSetup={orientation:"landscape",fitToPage:true,fitToWidth:1,fitToHeight:0,
+                margins:{left:0.4,right:0.4,top:0.5,bottom:0.5,header:0.2,footer:0.2}};
+
+  const buf=await wb.xlsx.writeBuffer();
+  const blob=new Blob([buf],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"});
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(blob); a.download="RPT_"+kode+"_"+t.replace(/-/g,"")+".xlsx";
+  document.body.appendChild(a); a.click();
+  setTimeout(()=>{URL.revokeObjectURL(a.href);document.body.removeChild(a);},400);
+  pesanEx("Report dibuat.");
+}
+
 function terbilang(n){n=Math.round(Math.abs(n));if(n===0)return"Nol";
   const s=eja(n);return s.charAt(0).toUpperCase()+s.slice(1);}
 function eja(x){const sat=["","satu","dua","tiga","empat","lima","enam","tujuh","delapan","sembilan","sepuluh","sebelas"];
@@ -1176,7 +1409,19 @@ function gambarAnalisa(){
   const bulan=document.getElementById("aBulan").value;
   const box=document.getElementById("isiAnalisa");
   const rows=DATA.db.filter(r=>r.tgl.slice(0,7)===bulan);
-  if(!rows.length){box.innerHTML='<div class="kosongan">Tidak ada data di bulan itu.</div>';return;}
+  if(!rows.length){
+    /* Riwayat koreksi tetap ditampilkan, karena saringan tanggalnya
+       berdiri sendiri dan bisa menunjuk bulan lain. */
+    box.innerHTML='<div class="kosongan">Tidak ada data omset di bulan itu.</div>'+
+                  '<div id="riwayatKoreksi"></div>';
+    ANALISA={bulan:bulan,ringkas:[["Keterangan","Nilai"],["Bulan",bulan]],
+             unit:[["Unit"]],kelompok:[["Jenis"]],entitas:[],zona:[],
+             koreksi:[["Waktu","Unit","Tgl collect","Tgl omset","Nilai lama","Nilai baru",
+                       "Selisih","Sudah setor","Oleh","Alasan"]],semua:[]};
+    siapkanSaringanKoreksi(bulan);
+    gambarKoreksiRiwayat();
+    return;
+  }
 
   const U={},trip={},bawa={};
   unitUnik().forEach(u=>U[u.kode]={nama:u.nama,zona:u.zona,ent:u.entitas,
@@ -1199,8 +1444,23 @@ function gambarAnalisa(){
       if(!kosong(r)&&h>=0){p.rupiahHari+=total(r)*h;p.lag+=h;p.lagN++;}
     }
   });
+  /* Per hari collect, kelompokkan unit yang dijemput lalu hitung biayanya. */
+  const perHari={};
+  Object.keys(trip).forEach(k=>{const [t,zona]=k.split("|");(perHari[t]=perHari[t]||[]).push(zona);});
+  const unitHari={};
+  DATA.db.filter(r=>r.tgl.slice(0,7)===bulan&&r.tglCollect).forEach(r=>{
+    (unitHari[r.tglCollect]=unitHari[r.tglCollect]||new Set()).add(r.unit);});
+  (DATA.lain||[]).filter(x=>x.tgl.slice(0,7)===bulan&&x.tglCollect).forEach(x=>{
+    (unitHari[x.tglCollect]=unitHari[x.tglCollect]||new Set()).add(x.unit);});
   let transport=0; const tz={};
-  Object.keys(trip).forEach(k=>{const z=trip[k];transport+=biaya(z);tz[z]=(tz[z]||0)+biaya(z);});
+  const peta={}; unitUnik().forEach(u=>peta[u.kode]=u);
+  Object.keys(unitHari).forEach(t=>{
+    const us=[...unitHari[t]].map(k=>peta[k]).filter(Boolean);
+    const b=biayaKelompok(us);
+    transport+=b;
+    const zs=[...new Set(us.filter(u=>u.zona!=="KANTOR").map(u=>u.zona))];
+    zs.forEach(z=>{tz[z]=(tz[z]||0)+biayaKelompok(us.filter(u=>u.zona===z));});
+  });
   let puncak=0,puncakTgl="";
   Object.keys(bawa).forEach(t=>{if(bawa[t]>puncak){puncak=bawa[t];puncakTgl=t;}});
 
@@ -1266,13 +1526,75 @@ function gambarAnalisa(){
      '<span class="pesan" id="pesanAnalisa"></span></div>'+
      '<p class="catatan">Angka disalin tanpa pemisah ribuan dan tanpa satuan, '+
      'jadi langsung terbaca sebagai angka saat ditempel ke Excel atau Google Sheet.</p>';
+  h+='<div id="riwayatKoreksi"></div>';
   box.innerHTML=h;
+  siapkanSaringanKoreksi(bulan);
+  gambarKoreksiRiwayat();
   ANALISA={bulan:bulan,ringkas:aoaRingkas,unit:aoaUnit,
            entitas:aoaKel.filter(r=>r[0]==="Jenis"||r[0]==="Entitas"),
            zona:aoaKel.filter(r=>r[0]==="Jenis"||r[0]==="Zona"),
            kelompok:aoaKel,
+           koreksi:[["Waktu","Unit","Tgl collect","Tgl omset","Nilai lama","Nilai baru",
+                     "Selisih","Sudah setor","Oleh","Alasan"]],
            semua:[].concat([["RINGKASAN"]],aoaRingkas,[[]],[["PER KELOMPOK"]],aoaKel,
                            [[]],[["PER UNIT"]],aoaUnit)};
+  gambarKoreksiRiwayat();
+}
+function siapkanSaringanKoreksi(bulan){
+  const su=document.getElementById("kUnit");
+  if(su&&!su.dataset.siap){
+    su.innerHTML='<option value="">Semua unit</option>'+
+      unitUnik().map(u=>'<option value="'+u.kode+'">'+u.kode+'</option>').join("");
+    su.dataset.siap="1";
+  }
+  const d1=document.getElementById("kDari"), d2=document.getElementById("kSampai");
+  if(d1&&!d1.value) d1.value=bulan+"-01";
+  if(d2&&!d2.value){
+    const [y,m]=bulan.split("-").map(Number);
+    d2.value=bulan+"-"+String(new Date(y,m,0).getDate()).padStart(2,"0");
+  }
+}
+function gambarKoreksiRiwayat(){
+  const box=document.getElementById("riwayatKoreksi");
+  if(!box)return;
+  const unit=(document.getElementById("kUnit")||{}).value||"";
+  const d1=(document.getElementById("kDari")||{}).value||"";
+  const d2=(document.getElementById("kSampai")||{}).value||"";
+  const r=(DATA.koreksi||[]).filter(x=>
+    (!unit||x.unit===unit) && (!d1||x.waktu>=d1) && (!d2||x.waktu<=d2))
+    .sort((a,b)=>b.waktu.localeCompare(a.waktu));
+  let h='<div class="blok"><div class="judul"><h2>Koreksi setoran</h2>'+
+    (r.length?'<button class="halus" onclick="salin(ANALISA.koreksi,this)">Salin</button>':'')+
+    '</div><p class="ket">Perubahan nilai collect setelah tersimpan. '+
+    'Saringan unit dan tanggal ada di bagian atas.</p>';
+  if(!r.length){
+    ANALISA&&(ANALISA.koreksi=[["Waktu","Unit","Tgl collect","Tgl omset","Nilai lama","Nilai baru","Selisih","Sudah setor","Oleh","Alasan"]]);
+    return void(box.innerHTML=h+'<div class="kosongan">Tidak ada koreksi pada saringan ini.</div></div>');
+  }
+  const aoa=[["Waktu","Unit","Tgl collect","Tgl omset","Nilai lama","Nilai baru","Selisih",
+              "Sudah setor","Oleh","Alasan"]];
+  h+='<div class="gulir"><table><thead><tr><th>Waktu</th><th>Unit</th><th>Tgl collect</th>'+
+     '<th>Tgl omset</th><th class="kanan">Lama</th><th class="kanan">Baru</th>'+
+     '<th class="kanan">Selisih</th><th>Alasan</th><th>Oleh</th></tr></thead><tbody>';
+  let naik=0,turun=0;
+  r.forEach(x=>{
+    if(x.selisih<0)turun+=x.selisih; else naik+=x.selisih;
+    aoa.push([x.waktu,x.unit,x.tglCollect,x.tglOmset,x.lama,x.baru,x.selisih,
+              x.sudahSetor?"Ya":"Tidak",x.oleh,x.alasan]);
+    h+='<tr><td>'+tglTeks(x.waktu)+'</td><td><b>'+x.unit+'</b></td>'+
+       '<td>'+tglTeks(x.tglCollect)+'</td><td>'+tglTeks(x.tglOmset)+'</td>'+
+       '<td class="kanan num">'+rp(x.lama)+'</td><td class="kanan num">'+rp(x.baru)+'</td>'+
+       '<td class="kanan num" style="color:'+(x.selisih<0?"var(--stamp)":"var(--amber)")+'">'+
+         (x.selisih>0?"+":"")+rp(x.selisih)+'</td>'+
+       '<td class="rinci">'+x.alasan+(x.sudahSetor?' <b>· sudah disetor</b>':'')+'</td>'+
+       '<td class="rinci">'+x.oleh+'</td></tr>';
+  });
+  h+='</tbody></table></div><p class="catatan">'+r.length+' koreksi. '+
+     'Menambah '+rp(naik)+', mengurangi '+rp(Math.abs(turun))+'. '+
+     'Koreksi pada setoran yang sudah masuk bank ditandai tebal — JV yang sudah dibuat '+
+     'untuk tanggal itu perlu diperiksa ulang.</p></div>';
+  box.innerHTML=h;
+  if(ANALISA)ANALISA.koreksi=aoa;
 }
 function kartu(l,v){return '<div><div class="lbl">'+l+'</div><div class="val num">'+v+'</div></div>';}
 function kelompok(arr,fn){
@@ -1309,7 +1631,8 @@ function unduhAnalisaXLSX(){
   unduhXLSX("ANALISA_"+ANALISA.bulan+".xlsx",[
     {nama:"Ringkasan",aoa:ANALISA.ringkas},
     {nama:"Per kelompok",aoa:ANALISA.kelompok},
-    {nama:"Per unit",aoa:ANALISA.unit}]);
+    {nama:"Per unit",aoa:ANALISA.unit},
+    {nama:"Koreksi",aoa:ANALISA.koreksi}]);
   const p=document.getElementById("pesanAnalisa");
   if(p){p.className="pesan";p.textContent="Berkas Excel dibuat.";}
 }
