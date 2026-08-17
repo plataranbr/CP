@@ -115,6 +115,11 @@ button.halus{background:#fff;color:var(--ink);font:inherit;font-size:13px;border
 .kartuUnit .atas{display:flex;flex-wrap:wrap;gap:12px;justify-content:space-between;
   align-items:baseline;padding:11px 14px;background:var(--field2);border-bottom:1px solid var(--rule2)}
 .kartuUnit .dalam{padding:12px 14px}
+.panel{border:1px solid var(--ink);background:#fff;margin:-8px 0 16px}
+.panel .kepalaPanel{padding:10px 14px;background:var(--field);border-bottom:1px solid var(--ink)}
+.panel .kepalaPanel h3{margin:0;font-size:12px;letter-spacing:.08em;text-transform:uppercase;
+  font-weight:700}
+.panel .isiPanel{padding:12px 14px}
 .mode{margin-top:26px;padding:10px 14px;border:1px dashed var(--rule);color:var(--ink2);
   font-size:12.5px;background:var(--field2)}
 .tombolRinci{font:inherit;font-size:11px;font-weight:600;letter-spacing:.04em;
@@ -239,6 +244,14 @@ tr.detail.buka{display:table-row}
           <select id="kUnit" onchange="gambarKoreksiRiwayat()"></select></div>
         <div><label for="kDari">Dari</label><input type="date" id="kDari" onchange="gambarKoreksiRiwayat()"></div>
         <div><label for="kSampai">Sampai</label><input type="date" id="kSampai" onchange="gambarKoreksiRiwayat()"></div>
+        <div><label for="kJenis">Jenis</label>
+          <select id="kJenis" onchange="gambarKoreksiRiwayat()">
+            <option value="KOREKSI">Koreksi</option>
+            <option value="HARI SAMA">Hari Sama</option>
+            <option value="TGL SETOR">Tanggal Setor</option>
+            <option value="BUKA VERIFIKASI">Buka Verifikasi</option>
+            <option value="SEMUA">Semua</option>
+          </select></div>
       </div>
       <div class="isi" id="isiAnalisa"></div>
     </div>
@@ -1079,9 +1092,13 @@ function gambarCollect(){
     h+='<div class="blok"><div class="judul"><h2>'+g.judul+'</h2></div>';
     if(!g.arr.length){h+='<div class="kosongan">Tidak ada.</div></div>';return;}
     g.arr.forEach(x=>{
+      const adaSimpan=peristiwaCollect().some(q=>q.unit===x.u.kode);
       h+='<div class="kartuUnit"><div class="atas"><div><span class="kode">'+x.u.kode+'</span>'+
          '<span class="nama">'+x.u.nama+'</span></div>'+
-         '<div class="num" style="font-weight:600">'+mio(x.kas)+'</div></div><div class="dalam">';
+         '<div style="display:flex;gap:12px;align-items:center">'+
+         '<span class="num" style="font-weight:600">'+mio(x.kas)+'</span>'+
+         (adaSimpan?'<button class="halus" onclick="bukaEditUnit(\''+x.u.kode+'\')">Edit</button>':'')+
+         '</div></div><div class="dalam">';
       h+='<div class="gulir"><table><thead><tr><th style="width:40px"></th><th>Tanggal omset</th>'+
          '<th class="kanan">Omset sistem</th><th class="kanan">Total collect</th>'+
          '<th>Tanggal setor</th></tr></thead><tbody>';
@@ -1138,8 +1155,10 @@ function gambarCollect(){
     });
     h+='</div>';
   });
+  if(!h)h='<div class="kosongan">Tidak ada unit yang menunggu.</div>';
   h+=blokKoreksi();
   document.getElementById("isiCollect").innerHTML=h||'<div class="kosongan">Tidak ada unit yang menunggu.</div>';
+  gambarTersimpan();
   unitUnik().forEach(u=>hitungCollect(u.kode));
   KOTOR=false;
 }
@@ -1281,81 +1300,190 @@ function peristiwaCollect(){
   return Object.keys(m).map(k=>({kunci:k,...m[k]}))
     .sort((a,b)=>b.tglCollect.localeCompare(a.tglCollect)).slice(0,40);
 }
-function blokKoreksi(){
-  const p=peristiwaCollect();
-  let h='<div class="blok"><div class="judul"><h2>Koreksi Collect</h2></div>';
-  if(!p.length) return h+'<div class="kosongan">Belum ada collect tersimpan.</div></div>';
-  h+='<div class="bar"><div style="min-width:260px;flex:1"><label for="kPilih">Peristiwa collect</label>'+
-     '<select id="kPilih" onchange="gambarKoreksi()"><option value="">— pilih —</option>'+
-     p.map(x=>'<option value="'+x.kunci+'">'+x.unit+' · jemput '+tglTeks(x.tglCollect)+
-       ' · '+rp(x.nilai)+(x.tglSetor?' · sudah disetor '+tglTeks(x.tglSetor):' · belum disetor')+
-       '</option>').join("")+'</select></div></div>';
-  h+='<div id="isiKoreksi"></div></div>';
-  return h;
+/* Tanggal hari ini menurut server, dipakai untuk menentukan penjemputan
+   mana yang masih berada di jendela input. Tanggal acuan di kepala tidak
+   dipakai karena bisa diubah, dan jam komputer pemakai juga tidak. */
+const hariServer=()=>DATA.hariIni||hariIni();
+
+/* Urutan outlet, supaya nilai collect yang diperbaiki menempel di baris
+   yang sama dengan waktu ia pertama kali disimpan. */
+function urutOutlet(unit,outlet){
+  const m=(DATA.master||[]).find(a=>a[0]===unit&&a[2]===outlet);
+  return m?(Number(m[6])||1):99;
 }
-function gambarKoreksi(){
-  const k=document.getElementById("kPilih").value;
+
+let EDIT_KUNCI="", SARING_SIMPAN="";
+function bukaEditUnit(kode){
+  const p=peristiwaCollect().filter(x=>x.unit===kode);
+  if(p.length)bukaEdit(p[0].kunci);
+}
+function bukaEdit(kunci){
+  EDIT_KUNCI=kunci;
+  gambarTersimpan();
+  const el=document.getElementById("panelEdit");
+  if(el)el.scrollIntoView({behavior:"smooth",block:"center"});
+}
+function tutupEdit(){EDIT_KUNCI="";gambarTersimpan();}
+
+function blokKoreksi(){
+  return '<div class="blok"><div class="judul"><h2>Collect Tersimpan</h2>'+
+    '<div><select id="kUnitSimpan" onchange="gambarTersimpan()" style="min-width:150px"></select></div>'+
+    '</div><div id="isiKoreksi"></div></div>';
+}
+
+/* Rincian satu penjemputan, dikelompokkan per tanggal omset. Satu tanggal
+   bisa punya beberapa baris outlet, tetapi nilai collect-nya satu. */
+function rincianEdit(unit,tglC){
+  const tgl=[...new Set(DATA.db.filter(r=>r.unit===unit&&r.tglCollect===tglC).map(r=>r.tgl))].sort();
+  return tgl.map(t=>{
+    const rows=DATA.db.filter(r=>r.unit===unit&&r.tgl===t&&r.tglCollect===tglC);
+    return{tgl:t,sistem:rows.reduce((s,r)=>s+total(r),0),
+           terima:rows.reduce((s,r)=>s+(+r.totalCollect||0),0)};
+  });
+}
+
+function gambarTersimpan(){
   const box=document.getElementById("isiKoreksi");
-  if(!k){box.innerHTML="";return;}
-  const [unit,tglC]=k.split("|");
-  const rows=DATA.db.filter(r=>r.unit===unit&&r.tglCollect===tglC&&(+r.totalCollect||0)>0);
-  const lain=(DATA.lain||[]).filter(x=>x.unit===unit&&x.tglCollect===tglC);
-  const verif=rows.some(r=>r.verifOleh)||lain.some(x=>x.verifOleh);
-  const sudah=verif||rows.some(r=>r.tglSetor)||lain.some(x=>x.tglSetor);
-  const adm=DATA.aku&&DATA.aku.peran==="ADMIN";
-  let h='<div class="gulir"><table><thead><tr><th>Tanggal omset</th>'+
-        '<th class="kanan">Omset sistem</th><th class="kanan">Total collect</th></tr></thead><tbody>';
-  rows.forEach(r=>{
-    const sis=DATA.db.filter(q=>q.unit===unit&&q.tgl===r.tgl&&q.tglCollect===tglC)
-                     .reduce((s,q)=>s+total(q),0);
-    h+='<tr><td>'+tglTeks(r.tgl)+'</td><td class="kanan num">'+rp(sis)+'</td>'+
-       '<td class="kanan"><input class="num" inputmode="numeric" data-kor="'+r.tgl+
-       '" value="'+fmtRibu(r.totalCollect)+'" oninput="rapikan(this)"'+
-       (sudah&&!adm?" disabled":"")+'></td></tr>';
+  if(!box)return;
+  const sel=document.getElementById("kUnitSimpan");
+  if(sel){
+    if(!sel.dataset.siap){
+      sel.innerHTML='<option value="">Semua unit</option>'+
+        unitEnt("collect").map(u=>'<option value="'+u.kode+'">'+u.kode+'</option>').join("");
+      sel.dataset.siap="1";
+      /* Tab digambar ulang setiap kali collect tersimpan, jadi pilihannya
+         disimpan di luar elemen supaya tidak kembali ke semua unit. */
+      sel.value=[...sel.options].some(o=>o.value===SARING_SIMPAN)?SARING_SIMPAN:"";
+    }
+    SARING_SIMPAN=sel.value;
+  }
+  const saring=(sel&&sel.value)||"";
+  const p=peristiwaCollect().filter(x=>!saring||x.unit===saring);
+  if(!p.length){box.innerHTML='<div class="kosongan">Belum ada collect tersimpan'+
+    (saring?' untuk '+saring:'')+'.</div>';return;}
+  let h="";
+  p.forEach(x=>{
+    const verif=DATA.db.some(r=>r.unit===x.unit&&r.tglCollect===x.tglCollect&&r.verifOleh)||
+                (DATA.lain||[]).some(l=>l.unit===x.unit&&l.tglCollect===x.tglCollect&&l.verifOleh);
+    h+='<div class="kartuUnit"><div class="atas">'+
+       '<div><span class="kode">'+x.unit+'</span>'+
+       '<span class="nama">jemput '+tglTeks(x.tglCollect)+' · '+rp(x.nilai)+'</span></div>'+
+       '<div style="display:flex;gap:10px;align-items:center">'+
+       '<span class="rinci">'+(verif?'terverifikasi':
+         (x.tglSetor?'setor '+tglTeks(x.tglSetor):'belum disetor'))+'</span>'+
+       '<button class="halus" onclick="bukaEdit(\''+x.kunci+'\')">Edit</button>'+
+       '</div></div></div>';
+    if(x.kunci===EDIT_KUNCI)h+=panelEdit(x.unit,x.tglCollect,verif);
   });
-  lain.forEach(x=>{
-    h+='<tr><td>'+tglTeks(x.tgl)+' <span class="rinci">'+namaJenis(x.jenis)+' · '+x.referensi+
-       '</span></td><td class="kanan num">'+rp(x.nilai)+'</td>'+
-       '<td class="kanan"><input class="num" inputmode="numeric" data-korl="'+x.id+
-       '" value="'+fmtRibu(x.totalCollect)+'" oninput="rapikan(this)"'+
-       (sudah&&!adm?" disabled":"")+'></td></tr>';
-  });
-  h+='</tbody></table></div>';
-  const tglS=(rows[0]&&rows[0].tglSetor)||(lain[0]&&lain[0].tglSetor)||"";
-  h+='<div class="bar" style="align-items:flex-end">'+
-     '<div><label>Tanggal setor</label><input type="date" id="kSetor" value="'+tglS+'"'+
-       (sudah&&!adm?" disabled":"")+'></div>'+
-     '<div style="flex:2;min-width:220px"><label>Alasan koreksi (wajib)</label>'+
-       '<input type="text" id="kAlasan" placeholder="mis. slip bank berbeda, uang kurang saat dihitung ulang"'+
-       (sudah&&!adm?" disabled":"")+'></div>'+
-     '<button class="aksi" onclick="simpanKoreksi()"'+(sudah&&!adm?" disabled":"")+'>Simpan koreksi</button>'+
-     '<span class="pesan" id="pesanKoreksi"></span></div>';
-  const sebab=verif?"Sudah diverifikasi":"Sudah disetor";
-  if(sudah&&!adm) h+='<p class="catatan">'+sebab+'. Hanya admin yang bisa memperbaiki.</p>';
-  else if(sudah) h+='<p class="catatan">'+sebab+'. Perubahan tercatat beserta alasannya.</p>';
   box.innerHTML=h;
 }
-async function simpanKoreksi(){
-  const k=document.getElementById("kPilih").value;
-  const p=document.getElementById("pesanKoreksi");
+
+function panelEdit(unit,tglC,verif){
+  const rinci=rincianEdit(unit,tglC);
+  const lain=(DATA.lain||[]).filter(x=>x.unit===unit&&x.tglCollect===tglC);
+  const mati=verif?" disabled":"";
+  const bolehBuka=DATA.aku&&(DATA.aku.peran==="IA"||DATA.aku.peran==="ADMIN");
+  let h='<div class="panel" id="panelEdit"><div class="kepalaPanel">'+
+        '<h3>Edit Collect — '+unit+' · jemput '+tglTeks(tglC)+'</h3></div>'+
+        '<div class="isiPanel"><div class="gulir"><table class="stack"><thead><tr>'+
+        '<th>Tanggal omset</th><th class="kanan">Omset sistem</th>'+
+        '<th class="kanan">Total collect</th></tr></thead><tbody>';
+  rinci.forEach(r=>{
+    h+='<tr><td data-l="Tanggal omset">'+tglTeks(r.tgl)+'</td>'+
+       '<td class="kanan num" data-l="Omset sistem">'+rp(r.sistem)+'</td>'+
+       '<td class="kanan" data-l="Total collect"><input class="num" inputmode="numeric" data-kor="'+
+       r.tgl+'" value="'+fmtRibu(r.terima)+'" oninput="rapikan(this)"'+mati+'></td></tr>';
+  });
+  lain.forEach(x=>{
+    h+='<tr><td data-l="Tanggal omset">'+tglTeks(x.tgl)+' <span class="rinci">'+
+       namaJenis(x.jenis)+' · '+x.referensi+'</span></td>'+
+       '<td class="kanan num" data-l="Omset sistem">'+rp(x.nilai)+'</td>'+
+       '<td class="kanan" data-l="Total collect"><input class="num" inputmode="numeric" data-korl="'+
+       x.id+'" value="'+fmtRibu(x.totalCollect)+'" oninput="rapikan(this)"'+mati+'></td></tr>';
+  });
+  h+='</tbody></table></div>';
+  const tglS=(rinci.length?(DATA.db.find(r=>r.unit===unit&&r.tglCollect===tglC)||{}).tglSetor:"")||
+             (lain[0]&&lain[0].tglSetor)||"";
+  h+='<div class="bar" style="align-items:flex-end">'+
+     '<div><label>Tanggal setor</label><input type="date" id="kSetor" value="'+tglS+'" min="'+tglC+
+       '" data-awal="'+tglS+'" onchange="cekGeserSetor(this)"'+mati+'></div>'+
+     '<div style="flex:2;min-width:230px"><label>Alasan koreksi</label>'+
+       '<input type="text" id="kAlasan" placeholder="mis. slip bank berbeda, uang kurang saat dihitung ulang"'+
+       mati+'></div>'+
+     '<button class="aksi" onclick="simpanKoreksi(\''+unit+'\',\''+tglC+'\')"'+mati+'>Simpan</button>'+
+     '<button class="halus" onclick="tutupEdit()">Tutup</button>'+
+     '<span class="pesan" id="pesanKoreksi"></span></div>'+
+     '<p class="catatan" id="ketSetor" hidden></p>';
+  if(verif){
+    h+='<p class="catatan">Sudah diverifikasi.'+
+       (bolehBuka?'':' Hanya Income Auditor dan admin yang bisa membukanya.')+'</p>';
+    if(bolehBuka){
+      h+='<div class="bar" style="align-items:flex-end">'+
+         '<div style="flex:2;min-width:230px"><label>Alasan membuka verifikasi</label>'+
+         '<input type="text" id="bAlasan" placeholder="mis. angka collect keliru, perlu diperbaiki"></div>'+
+         '<button class="halus" onclick="bukaVerifikasi(\''+unit+'\',\''+tglC+'\')">Buka Verifikasi</button>'+
+         '<span class="pesan" id="pesanBuka"></span></div>';
+    }
+  }
+  return h+'</div></div>';
+}
+
+/* Tanggal setor menentukan berkas JV mana yang memuat penjemputan ini.
+   Menggesernya berarti dua berkas berubah, jadi diberi tahu saat diubah. */
+function cekGeserSetor(el){
+  const k=document.getElementById("ketSetor");
   if(!k)return;
-  const [unit,tglC]=k.split("|");
+  const beda=(el.value||"")!==(el.dataset.awal||"");
+  k.hidden=!beda;
+  if(beda)k.textContent="Tanggal setor bergeser. JV tanggal "+
+    (el.dataset.awal?tglTeks(el.dataset.awal):"lama")+" dan "+
+    (el.value?tglTeks(el.value):"baru")+" ikut berubah.";
+}
+
+async function simpanKoreksi(unit,tglC){
+  const p=document.getElementById("pesanKoreksi");
   const alasan=(document.getElementById("kAlasan").value||"").trim();
-  if(!alasan){p.className="pesan gagal";p.textContent="Alasan koreksi wajib diisi.";return;}
   const baris=[],lain=[];
-  document.querySelectorAll("#isiKoreksi [data-kor]").forEach(i=>
+  document.querySelectorAll("#panelEdit [data-kor]").forEach(i=>
     baris.push({tgl:i.dataset.kor,terima:angkaDari(i.value)}));
-  document.querySelectorAll("#isiKoreksi [data-korl]").forEach(i=>
+  document.querySelectorAll("#panelEdit [data-korl]").forEach(i=>
     lain.push({id:i.dataset.korl,terima:angkaDari(i.value)}));
   const tglSetor=document.getElementById("kSetor").value||"";
+  if(baris.some(b=>b.terima<0)||lain.some(x=>x.terima<0)){
+    p.className="pesan gagal";p.textContent="Nilai collect tidak boleh negatif.";return;}
+  /* Alasan tidak dihalangi di sini. Yang menentukan wajib atau tidak
+     adalah tanggal server, dan itu diperiksa di sisi yang menyimpan. */
+  if(!alasan&&tglC!==hariServer()){
+    p.className="pesan gagal";p.textContent="Alasan koreksi wajib diisi.";return;}
   try{
     if(adaServer) await panggil("koreksiCollect",{unit,tglCollect:tglC,tglSetor,alasan,baris,lain});
-    baris.forEach(b=>DATA.db.filter(r=>r.unit===unit&&r.tgl===b.tgl&&r.tglCollect===tglC)
-      .forEach((r,i)=>{if(i===0)r.totalCollect=b.terima; r.tglSetor=tglSetor;}));
+    baris.forEach(b=>{
+      const rows=DATA.db.filter(r=>r.unit===unit&&r.tgl===b.tgl&&r.tglCollect===tglC)
+                        .sort((x,y)=>urutOutlet(unit,x.outlet)-urutOutlet(unit,y.outlet));
+      rows.forEach((r,i)=>{r.totalCollect=(i===0?b.terima:0);r.tglSetor=tglSetor;});
+    });
+    DATA.db.filter(r=>r.unit===unit&&r.tglCollect===tglC).forEach(r=>r.tglSetor=tglSetor);
     lain.forEach(x=>{const l=DATA.lain.find(y=>y.id===x.id);
-      if(l){l.totalCollect=x.terima;l.tglSetor=tglSetor;}});
-    p.className="pesan";p.textContent=adaServer?"Koreksi tersimpan.":"Tersimpan sementara.";
+      if(l)l.totalCollect=x.terima;});
+    (DATA.lain||[]).filter(x=>x.unit===unit&&x.tglCollect===tglC)
+      .forEach(x=>x.tglSetor=tglSetor);
+    p.className="pesan";p.textContent=adaServer?"Tersimpan.":"Tersimpan sementara.";
+    EDIT_KUNCI="";
     gambarCollect();gambarPosisi();
+  }catch(e){p.className="pesan gagal";p.textContent="Gagal. "+e.message;}
+}
+
+async function bukaVerifikasi(unit,tglC){
+  const p=document.getElementById("pesanBuka");
+  const alasan=(document.getElementById("bAlasan").value||"").trim();
+  if(!alasan){p.className="pesan gagal";p.textContent="Alasan wajib diisi.";return;}
+  try{
+    if(adaServer) await panggil("bukaVerifikasi",{unit,tglCollect:tglC,alasan});
+    DATA.db.filter(r=>r.unit===unit&&r.tglCollect===tglC)
+      .forEach(r=>{r.verifOleh="";r.verifWaktu="";});
+    (DATA.lain||[]).filter(x=>x.unit===unit&&x.tglCollect===tglC)
+      .forEach(x=>{x.verifOleh="";x.verifWaktu="";});
+    gambarTersimpan();
   }catch(e){p.className="pesan gagal";p.textContent="Gagal. "+e.message;}
 }
 
@@ -1972,7 +2100,7 @@ function gambarAnalisa(){
                   '<div id="riwayatKoreksi"></div>';
     ANALISA={bulan:bulan,ringkas:[["Keterangan","Nilai"],["Bulan",bulan]],
              unit:[["Unit"]],kelompok:[["Jenis"]],entitas:[],zona:[],
-             koreksi:[["Waktu","Unit","Tgl collect","Tgl omset","Nilai lama","Nilai baru",
+             koreksi:[["Waktu","Jenis","Unit","Tgl collect","Tgl omset","Nilai lama","Nilai baru",
                        "Selisih","Sudah setor","Oleh","Alasan"]],semua:[]};
     siapkanSaringanKoreksi(bulan);
     gambarKoreksiRiwayat();
@@ -2087,7 +2215,7 @@ function gambarAnalisa(){
            entitas:aoaKel.filter(r=>r[0]==="Jenis"||r[0]==="Entitas"),
            zona:aoaKel.filter(r=>r[0]==="Jenis"||r[0]==="Zona"),
            kelompok:aoaKel,
-           koreksi:[["Waktu","Unit","Tgl collect","Tgl omset","Nilai lama","Nilai baru",
+           koreksi:[["Waktu","Jenis","Unit","Tgl collect","Tgl omset","Nilai lama","Nilai baru",
                      "Selisih","Sudah setor","Oleh","Alasan"]],
            semua:[].concat([["RINGKASAN"]],aoaRingkas,[[]],[["PER KELOMPOK"]],aoaKel,
                            [[]],[["PER UNIT"]],aoaUnit)};
@@ -2113,35 +2241,43 @@ function gambarKoreksiRiwayat(){
   const unit=(document.getElementById("kUnit")||{}).value||"";
   const d1=(document.getElementById("kDari")||{}).value||"";
   const d2=(document.getElementById("kSampai")||{}).value||"";
+  const jns=(document.getElementById("kJenis")||{}).value||"KOREKSI";
   const r=(DATA.koreksi||[]).filter(x=>
-    (!unit||x.unit===unit) && (!d1||x.waktu>=d1) && (!d2||x.waktu<=d2))
+    (!unit||x.unit===unit) && (!d1||x.waktu>=d1) && (!d2||x.waktu<=d2) &&
+    (jns==="SEMUA"||String(x.jns||"KOREKSI")===jns))
     .sort((a,b)=>b.waktu.localeCompare(a.waktu));
   let h='<div class="blok"><div class="judul"><h2>Koreksi Setoran</h2>'+
     (r.length?'<button class="halus" onclick="salin(ANALISA.koreksi,this)">Salin</button>':'')+
     '</div>';
   if(!r.length){
-    ANALISA&&(ANALISA.koreksi=[["Waktu","Unit","Tgl collect","Tgl omset","Nilai lama","Nilai baru","Selisih","Sudah setor","Oleh","Alasan"]]);
+    ANALISA&&(ANALISA.koreksi=[["Waktu","Jenis","Unit","Tgl collect","Tgl omset","Nilai lama","Nilai baru","Selisih","Sudah setor","Oleh","Alasan"]]);
     return void(box.innerHTML=h+'<div class="kosongan">Tidak ada koreksi pada saringan ini.</div></div>');
   }
-  const aoa=[["Waktu","Unit","Tgl collect","Tgl omset","Nilai lama","Nilai baru","Selisih",
+  const aoa=[["Waktu","Jenis","Unit","Tgl collect","Tgl omset","Nilai lama","Nilai baru","Selisih",
               "Sudah setor","Oleh","Alasan"]];
-  h+='<div class="gulir"><table><thead><tr><th>Waktu</th><th>Unit</th><th>Tgl collect</th>'+
-     '<th>Tgl omset</th><th class="kanan">Lama</th><th class="kanan">Baru</th>'+
+  h+='<div class="gulir"><table><thead><tr><th>Waktu</th><th>Jenis</th><th>Unit</th>'+
+     '<th>Tgl collect</th><th>Tgl omset</th><th class="kanan">Lama</th><th class="kanan">Baru</th>'+
      '<th class="kanan">Selisih</th><th>Alasan</th><th>Oleh</th></tr></thead><tbody>';
   let naik=0,turun=0;
+  /* Baris tanggal setor dan pembukaan verifikasi tidak memindahkan rupiah,
+     jadi kolom nilainya dibiarkan apa adanya dan tidak ikut direkap. */
+  const angkaBaris=x=>String(x.jns||"KOREKSI")==="KOREKSI"||String(x.jns)==="HARI SAMA";
   r.forEach(x=>{
-    if(x.selisih<0)turun+=x.selisih; else naik+=x.selisih;
-    aoa.push([x.waktu,x.unit,x.tglCollect,x.tglOmset,x.lama,x.baru,x.selisih,
-              x.sudahSetor?"Ya":"Tidak",x.oleh,x.alasan]);
-    h+='<tr><td>'+tglTeks(x.waktu)+'</td><td><b>'+x.unit+'</b></td>'+
+    const ang=angkaBaris(x);
+    if(ang){if(x.selisih<0)turun+=x.selisih; else naik+=x.selisih;}
+    aoa.push([x.waktu,x.jns||"KOREKSI",x.unit,x.tglCollect,x.tglOmset,x.lama,x.baru,
+              ang?x.selisih:"",x.sudahSetor?"Ya":"Tidak",x.oleh,x.alasan]);
+    h+='<tr><td>'+tglTeks(x.waktu)+'</td><td class="rinci">'+(x.jns||"KOREKSI")+'</td>'+
+       '<td><b>'+x.unit+'</b></td>'+
        '<td>'+tglTeks(x.tglCollect)+'</td><td>'+tglTeks(x.tglOmset)+'</td>'+
-       '<td class="kanan num">'+rp(x.lama)+'</td><td class="kanan num">'+rp(x.baru)+'</td>'+
+       '<td class="kanan num">'+(ang?rp(x.lama):(x.lama?tglTeks(x.lama):"—"))+'</td>'+
+       '<td class="kanan num">'+(ang?rp(x.baru):(x.baru?tglTeks(x.baru):"—"))+'</td>'+
        '<td class="kanan num" style="color:'+(x.selisih<0?"var(--stamp)":"var(--amber)")+'">'+
-         (x.selisih>0?"+":"")+rp(x.selisih)+'</td>'+
+         (ang?((x.selisih>0?"+":"")+rp(x.selisih)):"")+'</td>'+
        '<td class="rinci">'+x.alasan+(x.sudahSetor?' <b>· sudah disetor</b>':'')+'</td>'+
        '<td class="rinci">'+x.oleh+'</td></tr>';
   });
-  h+='</tbody></table></div><p class="catatan">'+r.length+' koreksi · +'+rp(naik)+
+  h+='</tbody></table></div><p class="catatan">'+r.length+' baris · +'+rp(naik)+
      ' / \u2212'+rp(Math.abs(turun))+'</p></div>';
   box.innerHTML=h;
   if(ANALISA)ANALISA.koreksi=aoa;
