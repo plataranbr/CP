@@ -282,11 +282,15 @@ tr.detail.buka{display:table-row}
   <section id="panOmset" hidden>
     <div class="form">
       <div class="kepala">
-        <div><label for="oTgl">Tanggal omset</label><input type="date" id="oTgl" onchange="gambarOmset()"></div>
+        <div><label for="oDari">Dari</label><input type="date" id="oDari" onchange="gambarOmset()"></div>
+        <div><label for="oSampai">Sampai</label><input type="date" id="oSampai" onchange="gambarOmset()"></div>
+        <div><label for="oUnit">Unit</label>
+          <select id="oUnit" onchange="gambarOmset()"></select></div>
         <div><label>Entitas</label>
           <div class="segmen" id="segOmset">
             <button class="on" data-e="VD" onclick="setEnt('omset','VD')">VD</button>
             <button data-e="TERAS" onclick="setEnt('omset','TERAS')">Teras</button>
+            <button data-e="" onclick="setEnt('omset','')">Semua</button>
           </div></div>
         <div style="flex:1"></div>
         <button class="aksi" onclick="simpanOmset()">Simpan Omset</button>
@@ -306,6 +310,7 @@ tr.detail.buka{display:table-row}
           <div class="segmen" id="segCollect">
             <button class="on" data-e="VD" onclick="setEnt('collect','VD')">VD</button>
             <button data-e="TERAS" onclick="setEnt('collect','TERAS')">Teras</button>
+            <button data-e="" onclick="setEnt('collect','')">Semua</button>
           </div></div>
       </div>
       <div class="isi" id="isiCollect"></div>
@@ -936,15 +941,55 @@ function bukaDetail(kode){
 }
 
 /* ================= ISI OMSET ================= */
-function barisTertinggal(sampai){
+/* Tertinggal hanya memuat baris yang masih bisa disentuh: belum diisi dan
+   belum dijemput. Yang sudah dijemput tidak ditampilkan di sini karena
+   tidak bisa diperbaiki lewat layar ini. */
+function barisTertinggal(sampai,unit){
   const ent=new Set(unitEnt("omset").map(u=>u.kode));
-  return DATA.db.filter(r=>r.tgl<sampai&&kosong(r)&&ent.has(r.unit))
+  return DATA.db.filter(r=>r.tgl<sampai&&kosong(r)&&!r.tglCollect&&ent.has(r.unit)&&
+                           (!unit||r.unit===unit))
     .sort((a,b)=>a.tgl.localeCompare(b.tgl)||a.unit.localeCompare(b.unit));
 }
+
+/* Daftar tanggal dari a sampai b, keduanya ikut. */
+function rentangTgl(a,b){
+  const out=[];
+  const d=new Date(a+"T00:00:00"), akhir=new Date(b+"T00:00:00");
+  while(d<=akhir){
+    out.push(d.toISOString().slice(0,10));
+    d.setDate(d.getDate()+1);
+  }
+  return out;
+}
+
+function isiUnitOmset(){
+  const sel=document.getElementById("oUnit");
+  if(!sel)return;
+  const pilih=sel.value;
+  sel.innerHTML='<option value="">Semua unit</option>'+
+    unitEnt("omset").map(u=>'<option value="'+u.kode+'">'+u.kode+'</option>').join("");
+  sel.value=[...sel.options].some(o=>o.value===pilih)?pilih:"";
+}
+
+const BATAS_HARI_OMSET=31;
+
 function gambarOmset(){
-  const tgl=document.getElementById("oTgl").value;
-  if(!tgl){document.getElementById("isiOmset").innerHTML='<div class="kosongan">Pilih tanggal.</div>';return;}
-  const tert=barisTertinggal(tgl);
+  const box=document.getElementById("isiOmset");
+  const dari=document.getElementById("oDari").value;
+  let sampai=document.getElementById("oSampai").value||dari;
+  if(!dari){box.innerHTML='<div class="kosongan">Pilih tanggal.</div>';return;}
+  if(sampai<dari)sampai=dari;
+  const hari=rentangTgl(dari,sampai);
+  /* Rentang lebar membuat layar penuh baris dan menaikkan risiko salah
+     ketik pada tanggal yang tidak sedang dikerjakan. */
+  if(hari.length>BATAS_HARI_OMSET){
+    box.innerHTML='<div class="kosongan">Rentangnya '+hari.length+' hari. '+
+      'Persempit sampai '+BATAS_HARI_OMSET+' hari atau kurang.</div>';
+    return;
+  }
+  const unit=(document.getElementById("oUnit")||{}).value||"";
+  const daftar=unitEnt("omset").filter(u=>!unit||u.kode===unit);
+  const tert=barisTertinggal(dari,unit);
   let h="";
   if(tert.length){
     h+='<div class="gulir"><table class="stack"><thead><tr><th colspan="6">Tertinggal</th></tr>'+
@@ -959,18 +1004,26 @@ function gambarOmset(){
     });
     h+='</tbody></table></div>';
   }
-  h+='<div class="gulir"><table class="stack" style="margin-top:'+(tert.length?"22px":"0")+'"><thead>'+
-     '<tr><th colspan="6">'+tglTeks(tgl)+'</th></tr>'+
-     '<tr><th>Unit</th><th>Outlet</th><th class="kanan">Lunch</th><th class="kanan">Dinner</th>'+
-     '<th class="kanan">Breakfast</th><th class="tengah">Tidak ada omset</th></tr></thead><tbody>';
-  unitEnt("omset").forEach(u=>u.outlet.forEach(o=>{
-    let r=DATA.db.find(x=>x.unit===u.kode&&x.outlet===o.kode&&x.tgl===tgl);
-    if(!r){r={tgl,unit:u.kode,outlet:o.kode,lunch:"",dinner:"",bfast:"",tglCollect:"",tglSetor:"",totalCollect:0};
-      DATA.db.push(r);}
-    h+=isiBarisOmset(r,o.nama,tgl,u.kode);
-  }));
-  h+='</tbody></table></div>';
-  document.getElementById("isiOmset").innerHTML=h;
+  if(!daftar.length){
+    box.innerHTML=h+'<div class="kosongan">Tidak ada unit pada saringan ini.</div>';
+    return;
+  }
+  hari.forEach((tgl,n)=>{
+    h+='<div class="gulir"><table class="stack" style="margin-top:'+
+       ((tert.length||n)?"22px":"0")+'"><thead>'+
+       '<tr><th colspan="6">'+tglTeks(tgl)+'</th></tr>'+
+       '<tr><th>Unit</th><th>Outlet</th><th class="kanan">Lunch</th><th class="kanan">Dinner</th>'+
+       '<th class="kanan">Breakfast</th><th class="tengah">Tidak ada omset</th></tr></thead><tbody>';
+    daftar.forEach(u=>u.outlet.forEach(o=>{
+      let r=DATA.db.find(x=>x.unit===u.kode&&x.outlet===o.kode&&x.tgl===tgl);
+      if(!r){r={tgl,unit:u.kode,outlet:o.kode,lunch:"",dinner:"",bfast:"",tglCollect:"",
+               tglSetor:"",totalCollect:0};
+        DATA.db.push(r);}
+      h+=isiBarisOmset(r,o.nama,tgl,u.kode);
+    }));
+    h+='</tbody></table></div>';
+  });
+  box.innerHTML=h;
   KOTOR=false;
 }
 function isiBarisOmset(r,namaOutlet,tgl,kodeUnit){
@@ -1018,7 +1071,13 @@ async function simpanOmset(){
       const i=DATA.db.findIndex(x=>x.unit===b.unit&&x.outlet===b.outlet&&x.tgl===b.tgl);
       if(i>=0)Object.assign(DATA.db[i],b);else DATA.db.push({...b,tglCollect:"",tglSetor:"",totalCollect:0});});
     const masuk=baris.length-tolak.size;
-    if(tolak.size){
+    const ganda=(hasil&&hasil.ganda)||[];
+    if(ganda.length){
+      p.className="pesan gagal";
+      p.textContent=masuk+" baris tersimpan. "+ganda.length+
+        " baris kembar di sheet DB perlu dirapikan: "+ganda.slice(0,3).join(", ")+
+        (ganda.length>3?", …":"");
+    }else if(tolak.size){
       p.className="pesan gagal";
       p.textContent=masuk+" baris tersimpan, "+tolak.size+" dilewati karena sudah dijemput.";
     }else{
@@ -1062,9 +1121,10 @@ function setEnt(tab,e){
   ENT[tab]=e;
   const box=document.getElementById(tab==="omset"?"segOmset":"segCollect");
   [...box.children].forEach(b=>b.classList.toggle("on",b.dataset.e===e));
-  if(tab==="omset")gambarOmset(); else gambarCollect();
+  if(tab==="omset"){isiUnitOmset();gambarOmset();} else gambarCollect();
 }
-const unitEnt=tab=>unitUnik().filter(u=>u.entitas===ENT[tab]);
+/* Entitas kosong berarti semua entitas. Dipakai tombol Semua di segmen. */
+const unitEnt=tab=>unitUnik().filter(u=>!ENT[tab]||u.entitas===ENT[tab]);
 function daftarCollect(){
   const A=acuan(),zHari=zonaHari(A);
   const R=unitEnt("collect").map(ringkas).filter(x=>x.hari.length||x.hariOn.length);
@@ -2485,14 +2545,17 @@ function mulai(){
   document.getElementById("tabAnalisa").hidden=!adm;
   document.getElementById("tabVerifikasi").hidden=!(adm||ia);
   const A=acuan();
-  document.getElementById("oTgl").value=A;
+  document.getElementById("oDari").value=A;
+  document.getElementById("oSampai").value=A;
   document.getElementById("cCollect").value=A;
+  isiUnitOmset();
   document.getElementById("eUnit").innerHTML=
     unitUnik().map(u=>'<option value="'+u.kode+'">'+u.kode+" — "+u.nama+'</option>').join("");
   gambarPosisi();
 }
 document.getElementById("tglAcuan").addEventListener("change",()=>{
-  document.getElementById("oTgl").value=acuan();
+  document.getElementById("oDari").value=acuan();
+  document.getElementById("oSampai").value=acuan();
   document.getElementById("cCollect").value=acuan();
   gambarPosisi();
   if(!document.getElementById("panOmset").hidden)gambarOmset();
