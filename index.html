@@ -116,6 +116,12 @@ button.halus{background:#fff;color:var(--ink);font:inherit;font-size:13px;border
   align-items:baseline;padding:11px 14px;background:var(--field2);border-bottom:1px solid var(--rule2)}
 .kartuUnit .dalam{padding:12px 14px}
 .panel{border:1px solid var(--ink);background:#fff;margin:-8px 0 16px}
+.tertinggal{border:1px solid var(--rule);background:var(--field2);padding:10px 12px;
+  margin-bottom:16px}
+.judulTert{font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--ink2);font-weight:600;margin-bottom:8px}
+.chipTgl{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.chipTgl button{padding:4px 9px;font-size:12.5px}
 .panel .kepalaPanel{padding:10px 14px;background:var(--field);border-bottom:1px solid var(--ink)}
 .panel .kepalaPanel h3{margin:0;font-size:12px;letter-spacing:.08em;text-transform:uppercase;
   font-weight:700}
@@ -962,6 +968,15 @@ function rentangTgl(a,b){
   return out;
 }
 
+/* Menyetel rentang ke satu tanggal tertinggal, supaya baris isiannya
+   terbuka di blok utama, bukan menumpuk di atas. */
+function lompatTgl(t){
+  document.getElementById("oDari").value=t;
+  document.getElementById("oSampai").value=t;
+  gambarOmset();
+  document.getElementById("isiOmset").scrollIntoView({behavior:"smooth",block:"start"});
+}
+
 function isiUnitOmset(){
   const sel=document.getElementById("oUnit");
   if(!sel)return;
@@ -992,17 +1007,20 @@ function gambarOmset(){
   const tert=barisTertinggal(dari,unit);
   let h="";
   if(tert.length){
-    h+='<div class="gulir"><table class="stack"><thead><tr><th colspan="6">Tertinggal</th></tr>'+
-       '<tr><th>Tanggal</th><th>Outlet</th><th class="kanan">Lunch</th><th class="kanan">Dinner</th>'+
-       '<th class="kanan">Breakfast</th><th class="tengah">Tidak ada omset</th></tr></thead><tbody>';
-    let tglAkhir=null;
-    tert.forEach(r=>{
-      const o=DATA.master.find(m=>m[0]===r.unit&&m[2]===r.outlet);
-      if(r.tgl!==tglAkhir){tglAkhir=r.tgl;
-        h+='<tr class="grupTgl"><td colspan="6">'+tglTeks(r.tgl)+'</td></tr>';}
-      h+=isiBarisOmset(r,o?o[3]:r.outlet,r.tgl);
-    });
-    h+='</tbody></table></div>';
+    /* Tertinggal cukup jadi penunjuk, bukan formulir. Menggambarnya sebagai
+       tabel isian membuat tanggal yang sedang dikerjakan terdorong jauh ke
+       bawah, dan seluruh bulan yang belum diisi ikut terbuka sekaligus. */
+    const per={};
+    tert.forEach(r=>per[r.tgl]=(per[r.tgl]||0)+1);
+    const tgls=Object.keys(per).sort();
+    const tampil=tgls.slice(-30);
+    h+='<div class="tertinggal"><div class="judulTert">Tertinggal · '+tgls.length+
+       ' tanggal, '+tert.length+' baris</div><div class="chipTgl">'+
+       (tampil.length<tgls.length?'<span class="rinci">'+
+         (tgls.length-tampil.length)+' tanggal lebih awal tidak ditampilkan</span>':'')+
+       tampil.map(t=>'<button class="halus" onclick="lompatTgl(\''+t+'\')">'+
+         tglTeks(t)+' <span class="rinci">'+per[t]+'</span></button>').join("")+
+       '</div></div>';
   }
   if(!daftar.length){
     box.innerHTML=h+'<div class="kosongan">Tidak ada unit pada saringan ini.</div>';
