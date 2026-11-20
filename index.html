@@ -737,9 +737,14 @@ function rotasiBerikut(t){
    bukan lebih besar sama dengan. Kejadian yang bertanggal hari ini sudah
    terjadi, jadi collect yang baru disimpan langsung keluar dari daftar
    outstanding dan kartunya hilang dari tab Total Collect. */
+/* Hari yang sudah diisi tetapi omsetnya nol (unit tutup / tidak ada
+   penjualan cash) tidak punya uang untuk dijemput. Selama belum ada
+   collect yang tercatat, hari itu berstatus NIHIL dan tidak ikut
+   outstanding maupun aging. */
 function status(r){const A=acuan();
   if(r.tgl>=A)return"";
   if(kosong(r))return"BELUM DIISI";
+  if(!r.tglCollect&&total(r)<=0)return"NIHIL";
   if(!r.tglCollect||r.tglCollect>A)return"OUTSTANDING";
   if(!r.tglSetor||r.tglSetor>A)return"ON HAND";
   return"DISETOR";}
@@ -747,6 +752,7 @@ function status(r){const A=acuan();
 function statusLain(x){
   const A=acuan();
   if(x.tgl>=A)return"";
+  if(!x.tglCollect&&(+x.nilai||0)<=0)return"NIHIL";
   if(!x.tglCollect||x.tglCollect>A)return"OUTSTANDING";
   if(!x.tglSetor||x.tglSetor>A)return"ON HAND";
   return"DISETOR";
